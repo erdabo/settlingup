@@ -814,7 +814,7 @@ function addExpense(){
     document.getElementById('edit-mode-banner').style.display='none';
     document.getElementById('add-expense-card').classList.remove('edit-mode');
     document.getElementById('add-expense-btn').textContent='+ Add expense';
-    if(db && state.tabId){ deleteExpenseFromSupabase(wasId).then(()=>saveExpenseToSupabase(updated)); }
+    if(db && state.tabId){ updateExpenseInSupabase(updated); }
   } else {
     const newExp={id:expenseIdSeq++,desc,amount,paidBy:selectedPaidBy,splitType:state.currentSplitType,splitWith,splitAmounts};
     state.expenses.push(newExp);
@@ -1252,6 +1252,7 @@ function subscribeToTab(tabId) {
   dot.style.display = '';
 
   realtimeChannel = db.channel('tab-'+tabId)
+    // 1. INSERTS (New expenses)
     .on('postgres_changes',
       {event:'INSERT', schema:'public', table:'expenses', filter:'tab_id=eq.'+tabId},
       payload => {
@@ -1260,19 +1261,33 @@ function subscribeToTab(tabId) {
         state.expenses.push(exp);
         expenseIdSeq = Math.max(expenseIdSeq, exp.id+1);
         
-        // UPDATE: Re-render whichever step is currently active
         if(document.getElementById('step-2').classList.contains('active')) renderExpenseList();
         if(document.getElementById('step-3').classList.contains('active')) goSettle();
       })
+      
+    // 2. DELETES (Removed the filter to safely catch deletions)
     .on('postgres_changes',
-      {event:'DELETE', schema:'public', table:'expenses', filter:'tab_id=eq.'+tabId},
+      {event:'DELETE', schema:'public', table:'expenses'},
       payload => {
         state.expenses = state.expenses.filter(e=>e.id!==payload.old.id);
         
-        // UPDATE: Re-render whichever step is currently active
         if(document.getElementById('step-2').classList.contains('active')) renderExpenseList();
         if(document.getElementById('step-3').classList.contains('active')) goSettle();
       })
+
+    // 3. UPDATES TO EXPENSES (Catch edits to existing expenses)
+    .on('postgres_changes',
+      {event:'UPDATE', schema:'public', table:'expenses', filter:'tab_id=eq.'+tabId},
+      payload => {
+        const exp = rowToExpense(payload.new);
+        const idx = state.expenses.findIndex(e => e.id === exp.id);
+        if(idx !== -1) state.expenses[idx] = exp; // Update the local state
+        
+        if(document.getElementById('step-2').classList.contains('active')) renderExpenseList();
+        if(document.getElementById('step-3').classList.contains('active')) goSettle();
+      })
+      
+    // 4. UPDATES TO TABS (Keep the filter, syncs tab name and people list)
     .on('postgres_changes',
       {event:'UPDATE', schema:'public', table:'tabs', filter:'id=eq.'+tabId},
       payload => {
@@ -1286,15 +1301,15 @@ function subscribeToTab(tabId) {
     });
 }
 
-// Optimistically save a new expense; roll back on failure
-async function saveExpenseToSupabase(exp) {
+// Update Expense in Supabase
+async function updateExpenseInSupabase(exp) {
   if(!db || !state.tabId) return;
-  const {error} = await db.from('expenses').insert(expenseToRow(exp, state.tabId));
+  await setOwnerToken();
+  const {error} = await db.from('expenses').update(expenseToRow(exp, state.tabId))
+    .eq('tab_id', state.tabId).eq('id', exp.id);
   if(error) {
-    showToast('Could not save expense — try again.', true);
-    state.expenses = state.expenses.filter(e=>e.id!==exp.id);
-    expenseIdSeq = exp.id; // reclaim the id
-    renderExpenseList();
+    console.warn('updateExpense:', error.message);
+    showToast('Could not save edit.', true);
   }
 }
 
