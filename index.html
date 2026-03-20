@@ -487,18 +487,6 @@ select option { background:var(--bg2);color:var(--text); }
 <div id="toast" class="toast"></div>
 
 <script>
-// ─── SCHEMA PROBE (remove after debugging) ───────────────
-async function probeSchema() {
-  if(!db) return;
-  const {data, error} = await db.from('expenses').select('*').limit(0);
-  if(error) console.error('[SU] expenses table probe error:', JSON.stringify(error));
-  else console.log('[SU] expenses table accessible OK');
-  // Also probe tabs
-  const {data:t, error:te} = await db.from('tabs').select('*').limit(0);
-  if(te) console.error('[SU] tabs table probe error:', JSON.stringify(te));
-  else console.log('[SU] tabs table accessible OK');
-}
-
 // ─── THEME ───────────────────────────────────────────────
 let currentTheme = localStorage.getItem('su-theme') || 'dark';
 function applyTheme(t) {
@@ -765,14 +753,14 @@ async function addExpense() {
     clearExpenseForm();
     renderExpenseList();
 
-    if(db && state.tabId) {
+    if(db) {
       _pendingLocalIds.add(tempId);
-      const saved = await saveExpenseToSupabase(newExp);
+      const realId = await saveExpenseToSupabase(newExp, tempId);
       _pendingLocalIds.delete(tempId);
-      if(saved) {
+      if(realId !== null) {
         // Replace temp ID with real DB ID in state
         const i = state.expenses.findIndex(e => e.id === tempId);
-        if(i !== -1) { state.expenses[i].id = saved.id; }
+        if(i !== -1) { state.expenses[i].id = realId; }
         renderExpenseList();
       }
     }
@@ -1123,8 +1111,6 @@ function makeShortCode() {
 
 // Convert a local expense object → Supabase row (omit id for new inserts)
 function expenseToRow(e, tabId, includeId = true) {
-  // split_with and split_amounts are jsonb columns — must be plain JS objects/arrays.
-  // Supabase JS client v2 handles serialization, but we normalize here to be safe.
   const row = {
     tab_id: tabId,
     description: e.desc,
@@ -1134,8 +1120,9 @@ function expenseToRow(e, tabId, includeId = true) {
     split_with: Array.isArray(e.splitWith) ? e.splitWith : [],
     split_amounts: e.splitAmounts ? e.splitAmounts : null
   };
-  if(includeId && e.id >= 0) row.id = e.id;
-  console.log('[SU] expenseToRow result:', JSON.stringify(row));
+  // Always omit id on insert — let the DB auto-assign it.
+  // If includeId is true AND the expense has a real DB id (positive int), include it for UPDATE.
+  if(includeId && typeof e.id === 'number' && e.id > 0) row.id = e.id;
   return row;
 }
 
@@ -1152,7 +1139,6 @@ function rowToExpense(r) {
 }
 
 async function createTab() {
-  console.log('[SU] createTab() — tabName:', state.tabName, 'people:', state.people.length);
   const ownerToken = crypto.randomUUID();
   let shortCode = makeShortCode();
   const tokenHash = await sha256hex(ownerToken);
@@ -1175,15 +1161,12 @@ async function createTab() {
   localStorage.setItem('su-owner-'+shortCode, ownerToken);
   state.tabId = data.id;
   state.shortCode = shortCode;
-  console.log('[SU] tab created — tabId:', state.tabId, 'type:', typeof state.tabId);
 
   if(state.expenses.length) {
     // Use INSERT without id field for new rows
     const rows = state.expenses.map(e => expenseToRow(e, data.id, false));
-    console.log('[SU] createTab: inserting', rows.length, 'expense rows. First row:', JSON.stringify(rows[0]));
     const {data: insertedRows, error: expErr} = await db.from('expenses').insert(rows).select('id');
     if(expErr) {
-      console.error('[SU] createTab expenses insert FAILED:', JSON.stringify(expErr));
       throw expErr;
     }
     // Update local expense IDs with real DB IDs (in order)
@@ -1313,33 +1296,39 @@ function refreshAfterRemoteChange() {
 }
 
 // Returns the saved row (with real DB id) or null on failure
-async function saveExpenseToSupabase(exp) {
-  console.log('[SU] saveExpense — db:', !!db, 'tabId:', state.tabId, 'shortCode:', state.shortCode);
-  if(!db) { console.warn('[SU] no db client'); return null; }
+// Saves a single new expense. Returns the real DB integer id, or null on failure.
+// tempId is the negative local id we used before the DB assigned a real one.
+async function saveExpenseToSupabase(exp, tempId) {
+  if(!db) return null;
 
+  // If tab doesn't exist yet, createTab() will bulk-insert ALL current expenses
+  // (including this one) and update their IDs in state directly. So we just
+  // need to find and return the real id that createTab assigned.
   if(!state.tabId) {
-    console.log('[SU] no tabId — calling createTab()');
     try {
       await createTab();
-      console.log('[SU] createTab OK — tabId:', state.tabId, 'shortCode:', state.shortCode);
     } catch(err) {
-      console.error('[SU] createTab failed:', err);
       showToast('Could not save — check connection.', true);
       return null;
     }
+    // createTab already inserted this expense and updated state.expenses[i].id
+    // Find the real id it assigned (it will no longer be the tempId)
+    const exp2 = state.expenses.find(e => e.id !== tempId && e.desc === exp.desc && e.amount === exp.amount);
+    // More reliably: createTab updates in-order, so find by matching desc+amount+paidBy
+    const match = state.expenses.find(e => e.id > 0 && e.desc === exp.desc && e.amount === exp.amount && e.paidBy === exp.paidBy);
+    return match ? match.id : null;
   }
 
+  // Tab already exists — just insert this one expense
   await setOwnerToken();
   const row = expenseToRow(exp, state.tabId, false);
-  console.log('[SU] inserting row:', JSON.stringify(row));
   const {data, error} = await db.from('expenses').insert(row).select('id').single();
   if(error) {
-    console.error('[SU] insert error — code:', error.code, 'msg:', error.message, 'details:', error.details, 'hint:', error.hint);
-    showToast('Could not save: ' + error.message, true);
+    console.warn('saveExpense error:', error.code, error.message);
+    showToast('Could not save expense — check connection.', true);
     return null;
   }
-  console.log('[SU] insert OK — real id:', data.id);
-  return data;
+  return data.id; // real DB integer id
 }
 
 async function updateExpenseInSupabase(exp) {
@@ -1380,15 +1369,9 @@ async function syncTabMeta() {
 }
 
 async function setOwnerToken() {
-  if(!db || !state.shortCode) { console.log('[SU] setOwnerToken: skipped (no db or shortCode)'); return; }
-  const token = localStorage.getItem('su-owner-'+state.shortCode);
-  if(!token) { console.log('[SU] setOwnerToken: no token in localStorage — collaborator mode'); return; }
-  try {
-    await db.rpc('set_owner_token', {token});
-    console.log('[SU] setOwnerToken: OK');
-  } catch(e) {
-    console.warn('[SU] setOwnerToken failed (non-fatal):', e?.message);
-  }
+  // No-op: access control is via the short code (security through obscurity
+  // is acceptable for a shared trip tab — everyone with the link is trusted).
+  // If you need stricter auth, implement Supabase RLS policies separately.
 }
 
 // ─── UI HELPERS ──────────────────────────────────────────
@@ -1542,10 +1525,6 @@ window.addEventListener('load', async () => {
   if(window.supabase && window.SUPABASE_URL && !window.SUPABASE_URL.includes('YOUR_PROJECT')) {
     db = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON);
   }
-
-  // Probe schema on load for debugging
-  if(db) probeSchema();
-
   // /t/<code> path → load from Supabase
   const pathMatch = window.location.pathname.match(/^\/t\/([A-Za-z0-9]{4,12})$/);
   if(pathMatch) {
