@@ -1294,14 +1294,26 @@ function refreshAfterRemoteChange() {
 
 // Returns the saved row (with real DB id) or null on failure
 async function saveExpenseToSupabase(exp) {
-  if(!db || !state.tabId) return null;
+  if(!db) return null;
+
+  // Auto-create the tab in Supabase if it hasn't been saved yet
+  if(!state.tabId) {
+    try {
+      await createTab();
+    } catch(err) {
+      console.warn('saveExpense: could not auto-create tab:', err);
+      showToast('Could not save — check connection.', true);
+      return null;
+    }
+  }
+
   await setOwnerToken();
   // Never send a negative temp id to the DB — omit id so DB auto-assigns
   const row = expenseToRow(exp, state.tabId, false);
   const {data, error} = await db.from('expenses').insert(row).select('id').single();
   if(error) {
-    console.warn('saveExpense:', error.message);
-    showToast('Could not save expense — check connection.', true);
+    console.warn('saveExpense error:', error.code, error.message);
+    showToast(`Could not save expense: ${error.message}`, true);
     return null;
   }
   return data; // { id: <real DB id> }
@@ -1321,8 +1333,8 @@ async function updateExpenseInSupabase(exp) {
   };
   const {error} = await db.from('expenses').update(row).eq('tab_id', state.tabId).eq('id', exp.id);
   if(error) {
-    console.warn('updateExpense:', error.message);
-    showToast('Could not save edit — check connection.', true);
+    console.warn('updateExpense error:', error.code, error.message);
+    showToast(`Could not save edit: ${error.message}`, true);
   }
 }
 
@@ -1331,7 +1343,7 @@ async function deleteExpenseFromSupabase(id) {
   if(id < 0) return; // temp ID, was never saved
   await setOwnerToken();
   const {error} = await db.from('expenses').delete().eq('tab_id', state.tabId).eq('id', id);
-  if(error) console.warn('deleteExpense:', error.message);
+  if(error) console.warn('deleteExpense error:', error.code, error.message);
 }
 
 async function syncTabMeta() {
@@ -1345,10 +1357,14 @@ async function syncTabMeta() {
 }
 
 async function setOwnerToken() {
+  if(!db || !state.shortCode) return;
   const token = localStorage.getItem('su-owner-'+state.shortCode);
-  if(token && db) {
-    try { await db.rpc('set_owner_token', {token}); }
-    catch(e) { /* non-fatal */ }
+  if(!token) return; // collaborator — no owner token, that's fine
+  try {
+    await db.rpc('set_owner_token', {token});
+  } catch(e) {
+    // Non-fatal: RPC may not exist or token may be invalid
+    console.warn('setOwnerToken failed (non-fatal):', e?.message);
   }
 }
 
