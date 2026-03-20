@@ -371,6 +371,27 @@ select option { background: var(--bg2); color: var(--text); }
 .edit-mode-banner button { background: transparent; border: none; color: var(--text2); font-size: 13px; cursor: pointer; font-family: 'Outfit', sans-serif; padding: 0; -webkit-tap-highlight-color: transparent; }
 .edit-mode-banner button:hover { color: var(--text); }
 
+/* ─── IDENTITY PICKER ─── */
+.identity-btn {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 14px; padding: 14px 18px; width: 100%;
+  font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 600;
+  color: var(--text); cursor: pointer; text-align: left;
+  transition: all 0.15s; -webkit-tap-highlight-color: transparent;
+}
+.identity-btn:hover { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+
+/* ─── IDENTITY CHIP (header) ─── */
+.identity-chip {
+  font-size: 12px; color: var(--text2); cursor: pointer;
+  padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface); transition: all 0.15s; white-space: nowrap;
+  font-family: 'Outfit', sans-serif; font-weight: 500;
+  -webkit-tap-highlight-color: transparent;
+}
+.identity-chip:hover { border-color: var(--accent); color: var(--accent); }
+
 /* ─── DB OVERLAY (loading / error) ─── */
 .db-overlay {
   position: fixed; inset: 0; background: var(--bg); z-index: 999;
@@ -421,6 +442,7 @@ select option { background: var(--bg2); color: var(--text); }
     </div>
     <div class="logo-text">Settling<span>Up</span></div>
     <div id="conn-dot" class="conn-dot" style="display:none" title="Live — updates in real time"></div>
+    <button id="identity-chip" class="identity-chip" style="display:none" onclick="showIdentityPicker()">👤 <span id="identity-name"></span></button>
     <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Toggle theme">🌙</button>
   </div>
 
@@ -559,6 +581,16 @@ select option { background: var(--bg2); color: var(--text); }
 
 </div><!-- /app -->
 
+<!-- Identity picker -->
+<div id="identity-picker" class="db-overlay hidden">
+  <div style="text-align:center;max-width:340px;width:100%;padding:0 20px;">
+    <div style="font-size:28px;font-weight:800;letter-spacing:-0.5px;margin-bottom:6px;">Who are you?</div>
+    <div style="color:var(--text2);font-size:14px;margin-bottom:24px;">We'll personalize the view for you.</div>
+    <div id="identity-people-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+    <button class="btn btn-ghost" style="margin-top:14px;font-size:13px;" onclick="setMyIdentity(null)">Skip for now</button>
+  </div>
+</div>
+
 <!-- DB loading overlay -->
 <div id="db-overlay" class="db-overlay hidden">
   <div class="logo-mark"><div class="arrow-head"></div><div class="arrow-shaft"></div></div>
@@ -582,7 +614,7 @@ function toggleTheme() { applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
 applyTheme(currentTheme);
 
 // ─── STATE ───────────────────────────────────────────────
-let state = { tabName:'', people:[], expenses:[], currentSplitType:'even', tabId:null, shortCode:null };
+let state = { tabName:'', people:[], expenses:[], currentSplitType:'even', tabId:null, shortCode:null, myPersonId:null };
 let personIdSeq=0, expenseIdSeq=0, paymentMode='simplified';
 let _simplifiedPayments=[], _directPayments=[];
 let editingId = null;
@@ -606,7 +638,7 @@ function goStep(n) {
 function startOver(){
   if(!confirm('Start a new tab? This will clear everything.')) return;
   if(realtimeChannel){ realtimeChannel.unsubscribe(); realtimeChannel=null; }
-  state={tabName:'',people:[],expenses:[],currentSplitType:'even',tabId:null,shortCode:null};
+  state={tabName:'',people:[],expenses:[],currentSplitType:'even',tabId:null,shortCode:null,myPersonId:null};
   personIdSeq=0; expenseIdSeq=0;
   document.getElementById('tab-name').value='';
   document.getElementById('people-list').innerHTML='';
@@ -868,7 +900,7 @@ function renderExpenseList(){
           <div class="expense-desc">${escHtml(exp.desc)}</div>
           <div class="expense-meta"><span style="display:inline-flex;align-items:center;gap:5px;">
             <span class="person-avatar ${avatarClass(pi)}" style="width:18px;height:18px;font-size:9px;border-radius:50%;display:inline-grid;place-items:center;">${initials(payer?.name||'?')}</span>
-            ${escHtml(payer?.name||'?')} paid
+            ${isMe(payer?.id)?'You':escHtml(payer?.name||'?')} paid
           </span></div>
         </div>
         <div class="expense-actions">
@@ -940,6 +972,8 @@ async function goSettle(){
   paymentMode='simplified';
   renderSettleStep(balances);
   goStep(3);
+  // Show identity picker if not yet set
+  if(state.myPersonId === null && state.people.length > 0) setTimeout(showIdentityPicker, 350);
 }
 function simplifyDebts(balances){
   const bal={},payments=[],EPS=0.005;
@@ -978,28 +1012,42 @@ function renderSettleStep(balances){
     if(exp.splitAmounts)exp.splitWith.forEach(id=>{to[id]+=(exp.splitAmounts[id]||0);});
     else{const share=exp.amount/exp.splitWith.length;exp.splitWith.forEach(id=>{to[id]+=share;});}
   });
-  document.getElementById('person-cards').innerHTML=state.people.map((p,i)=>{
+  // Pin the "You" card to top, preserve original order for everyone else
+  const me = state.people.find(p=>isMe(p.id));
+  const orderedPeople = me ? [me, ...state.people.filter(p=>!isMe(p.id))] : state.people;
+  document.getElementById('person-cards').innerHTML=orderedPeople.map(p=>{
+    const i=state.people.indexOf(p); // preserve original avatar colour
+    const itsMe=isMe(p.id);
     const paid=tp[p.id]||0,owed=to[p.id]||0,bal=Math.round((paid-owed)*100)/100;
     const isPos=bal>0.005,isNeg=bal<-0.005;
     const cc=isPos?'is-pos':isNeg?'is-neg':'is-zero',vc=isPos?'pos':isNeg?'neg':'zero';
-    const verdict=isPos?`is owed ${fmt(bal)}`:isNeg?`owes ${fmt(Math.abs(bal))}`:'settled ✓';
-    // clean, neutral one-liner — no "fair" language
-    const sentence=isPos
-      ?`${escHtml(p.name)} paid ${fmt(paid)}, their share was ${fmt(owed)} — the group owes them ${fmt(bal)}.`
+    const verdict=isPos
+      ?(itsMe?`you're owed ${fmt(bal)}`:`is owed ${fmt(bal)}`)
       :isNeg
-      ?`${escHtml(p.name)} paid ${fmt(paid)}, their share was ${fmt(owed)} — they owe ${fmt(Math.abs(bal))}.`
-      :`${escHtml(p.name)} paid exactly their share. All settled.`;
-    const paidLines=state.expenses.filter(e=>e.paidBy===p.id).map(e=>`<div class="detail-line"><span class="dl-desc">${escHtml(e.desc)}</span><span class="dl-note">paid</span><span class="dl-amount" style="color:var(--accent)">+${fmt(e.amount)}</span></div>`).join('');
+      ?(itsMe?`you owe ${fmt(Math.abs(bal))}`:`owes ${fmt(Math.abs(bal))}`)
+      :'settled ✓';
+    const sentence=isPos
+      ?(itsMe
+        ?`You paid ${fmt(paid)}, your share was ${fmt(owed)} — the group owes you ${fmt(bal)}.`
+        :`${escHtml(p.name)} paid ${fmt(paid)}, their share was ${fmt(owed)} — the group owes them ${fmt(bal)}.`)
+      :isNeg
+      ?(itsMe
+        ?`You paid ${fmt(paid)}, your share was ${fmt(owed)} — you owe ${fmt(Math.abs(bal))}.`
+        :`${escHtml(p.name)} paid ${fmt(paid)}, their share was ${fmt(owed)} — they owe ${fmt(Math.abs(bal))}.`)
+      :(itsMe
+        ?`You paid exactly your share. All settled.`
+        :`${escHtml(p.name)} paid exactly their share. All settled.`);
+    const paidLines=state.expenses.filter(e=>e.paidBy===p.id).map(e=>`<div class="detail-line"><span class="dl-desc">${escHtml(e.desc)}</span><span class="dl-note">${itsMe?'you paid':'paid'}</span><span class="dl-amount" style="color:var(--accent)">+${fmt(e.amount)}</span></div>`).join('');
     const chargedLines=state.expenses.filter(e=>e.splitWith.includes(p.id)).map(e=>{
       const ms=e.splitAmounts?(e.splitAmounts[p.id]||0):e.amount/e.splitWith.length;
       const payer=state.people.find(pp=>pp.id===e.paidBy);
-      const note=e.paidBy===p.id?'you paid':`${escHtml(payer?.name||'?')} paid`;
+      const note=e.paidBy===p.id?(itsMe?'you paid':'they paid'):isMe(e.paidBy)?'you paid':`${escHtml(payer?.name||'?')} paid`;
       return `<div class="detail-line"><span class="dl-desc">${escHtml(e.desc)}</span><span class="dl-note">${note}</span><span class="dl-amount" style="color:var(--red)">-${fmt(ms)}</span></div>`;
     }).join('');
-    return `<div class="person-card ${cc}" id="pcard-${p.id}">
+    return `<div class="person-card ${cc}${itsMe?' you-card':''}" id="pcard-${p.id}">
       <div class="person-card-header" onclick="toggleCard(${p.id})">
         <div class="person-avatar ${avatarClass(i)}" style="width:32px;height:32px;font-size:13px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;">${initials(p.name)}</div>
-        <div class="person-card-name">${escHtml(p.name)}</div>
+        <div class="person-card-name">${itsMe?'You':escHtml(p.name)}</div>
         <div class="person-card-verdict ${vc}">${verdict}</div>
         <span class="expand-chevron">▼</span>
       </div>
@@ -1010,8 +1058,8 @@ function renderSettleStep(balances){
       </div>
       <div class="person-card-sentence">${sentence}</div>
       <div class="person-card-detail">
-        ${paidLines?`<div class="detail-section-title">What they paid</div>${paidLines}`:''}
-        ${chargedLines?`<div class="detail-section-title">Their portion</div>${chargedLines}`:''}
+        ${paidLines?`<div class="detail-section-title">${itsMe?'What you paid':'What they paid'}</div>${paidLines}`:''}
+        ${chargedLines?`<div class="detail-section-title">${itsMe?'Your portion':'Their portion'}</div>${chargedLines}`:''}
         <div id="card-payments-${p.id}"></div>
       </div>
     </div>`;
@@ -1023,11 +1071,54 @@ function renderPaymentsList(payments){
   document.getElementById('payments-list').innerHTML=payments.map((pay,i)=>{
     const from=state.people.find(p=>p.id===pay.from),to=state.people.find(p=>p.id===pay.to);
     const fi=state.people.indexOf(from),ti=state.people.indexOf(to);
-    return `<div class="payment-card"><div class="payment-arrow"><div class="person-avatar ${avatarClass(fi)}" style="width:36px;height:36px;font-size:14px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;">${initials(from?.name||'?')}</div><div style="min-width:0;"><div class="payer-name">${escHtml(from?.name||'?')}</div><div style="font-size:12px;color:var(--text2);">pays</div></div><div style="flex:1;height:1px;border-top:1px dashed var(--border);margin:0 6px;"></div><div style="font-size:16px;color:var(--text3);">→</div><div style="flex:1;height:1px;border-top:1px dashed var(--border);margin:0 6px;"></div><div style="min-width:0;text-align:right;"><div class="receiver-name">${escHtml(to?.name||'?')}</div><div style="font-size:12px;color:var(--text2);">receives</div></div><div class="person-avatar ${avatarClass(ti)}" style="width:36px;height:36px;font-size:14px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;">${initials(to?.name||'?')}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;margin-left:10px;flex-shrink:0;"><div class="payment-amount">${fmt(pay.amount)}</div><div class="done-chip" id="done-${i}" onclick="markDone(${i})">Paid ✓</div></div></div>`;
+    const fromName=isMe(pay.from)?'You':escHtml(from?.name||'?');
+    const toName=isMe(pay.to)?'you':escHtml(to?.name||'?');
+    const paysVerb=isMe(pay.from)?'pay':'pays';
+    const receivesVerb=isMe(pay.to)?'receive':'receives';
+    return `<div class="payment-card${isMe(pay.from)||isMe(pay.to)?' you-payment':''}"><div class="payment-arrow"><div class="person-avatar ${avatarClass(fi)}" style="width:36px;height:36px;font-size:14px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;">${initials(from?.name||'?')}</div><div style="min-width:0;"><div class="payer-name">${fromName}</div><div style="font-size:12px;color:var(--text2);">${paysVerb}</div></div><div style="flex:1;height:1px;border-top:1px dashed var(--border);margin:0 6px;"></div><div style="font-size:16px;color:var(--text3);">→</div><div style="flex:1;height:1px;border-top:1px dashed var(--border);margin:0 6px;"></div><div style="min-width:0;text-align:right;"><div class="receiver-name">${toName}</div><div style="font-size:12px;color:var(--text2);">${receivesVerb}</div></div><div class="person-avatar ${avatarClass(ti)}" style="width:36px;height:36px;font-size:14px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;">${initials(to?.name||'?')}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;margin-left:10px;flex-shrink:0;"><div class="payment-amount">${fmt(pay.amount)}</div><div class="done-chip" id="done-${i}" onclick="markDone(${i})">Paid ✓</div></div></div>`;
   }).join('');
 }
 function toggleCard(id){document.getElementById('pcard-'+id).classList.toggle('expanded');}
 function markDone(i){const el=document.getElementById('done-'+i);el.classList.toggle('marked');el.textContent=el.classList.contains('marked')?'✓ Done':'Paid ✓';}
+
+// ─── IDENTITY ────────────────────────────────────────────
+function isMe(pid) { return state.myPersonId !== null && pid === state.myPersonId; }
+
+function showIdentityPicker() {
+  const list = document.getElementById('identity-people-list');
+  list.innerHTML = state.people.map((p,i)=>`
+    <button class="identity-btn" onclick="setMyIdentity(${p.id})">
+      <div class="person-avatar ${avatarClass(i)}" style="width:38px;height:38px;font-size:15px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;">${initials(p.name)}</div>
+      <div>${escHtml(p.name)}</div>
+    </button>`).join('');
+  document.getElementById('identity-picker').className = 'db-overlay';
+}
+
+function setMyIdentity(id) {
+  state.myPersonId = id;
+  document.getElementById('identity-picker').className = 'db-overlay hidden';
+  if(id !== null && state.tabId) localStorage.setItem('su-identity-'+state.tabId, id);
+  updateIdentityChip();
+  // Re-render settle step with personalization applied
+  if(document.getElementById('step-3').classList.contains('active')) {
+    const balances = {};
+    state.people.forEach(p=>{ balances[p.id]=0; });
+    state.expenses.forEach(exp=>{
+      balances[exp.paidBy]+=exp.amount;
+      if(exp.splitAmounts) exp.splitWith.forEach(id=>{ balances[id]-=(exp.splitAmounts[id]||0); });
+      else { const s=exp.amount/exp.splitWith.length; exp.splitWith.forEach(id=>{ balances[id]-=s; }); }
+    });
+    renderSettleStep(balances);
+  }
+}
+
+function updateIdentityChip() {
+  const chip = document.getElementById('identity-chip');
+  const p = state.people.find(pp=>pp.id===state.myPersonId);
+  if(!p) { chip.style.display='none'; return; }
+  chip.style.display='';
+  document.getElementById('identity-name').textContent = p.name;
+}
 
 // ─── SUPABASE ────────────────────────────────────────────
 
@@ -1110,10 +1201,14 @@ async function loadTabFromSupabase(code) {
     personIdSeq = tab.person_id_seq;
     expenseIdSeq = state.expenses.length ? Math.max(...state.expenses.map(e=>e.id))+1 : 0;
 
+    // Restore saved identity so goSettle renders correctly on first load
+    const savedId = localStorage.getItem('su-identity-'+tab.id);
+    if(savedId !== null) { state.myPersonId = parseInt(savedId); updateIdentityChip(); }
+
     document.getElementById('tab-name').value = state.tabName;
     renderPeopleList();
     renderExpenseStep();
-    goSettle();
+    await goSettle();
     subscribeToTab(tab.id);
     hideDbOverlay();
   } catch(err) {
