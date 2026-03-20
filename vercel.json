@@ -1,5 +1,11 @@
 {
   "rewrites": [
     { "source": "/t/:code", "destination": "/index.html" }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "main": true,
+      "staging": true
+    }
+  }
 }
