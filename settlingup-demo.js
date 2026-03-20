@@ -9,7 +9,7 @@
 //
 // Person IDs must match the ids array: first person = 0, second = 1, etc.
 
-window.SETTLEUP_DEMO = {
+window.SETTLINGUP_DEMO = {
   tabName: "Disneyland 2026",
 
   people: [
