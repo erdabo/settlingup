@@ -379,7 +379,7 @@ select option { background:var(--bg2);color:var(--text); }
 .demo-cards-toggle { display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 0;-webkit-tap-highlight-color:transparent;user-select:none; }
 .demo-cards-toggle-label { font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);font-weight:600;flex:1; }
 .demo-cards-toggle-chevron { font-size:10px;color:var(--text3);transition:transform 0.22s; }
-.demo-cards-section.open .demo-cards-toggle-chevron { transform:rotate(180deg); }
+.demo-cards-section.open .demo-cards-toggle-chevron { transform:rotate(90deg); }
 .demo-cards-list-wrap { display:none; }
 .demo-cards-section.open .demo-cards-list-wrap { display:block;animation:fadeUp 0.2s ease both; }
 .demo-card-list { display:flex;flex-direction:column;gap:8px;padding-top:8px; }
@@ -423,6 +423,30 @@ select option { background:var(--bg2);color:var(--text); }
 .recent-tab-name { font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
 .recent-tab-meta { font-size:11px;color:var(--text3);margin-top:2px; }
 .recent-tab-arrow { color:var(--text3);font-size:14px;flex-shrink:0; }
+/* icon picker */
+.icon-picker-wrap { position:relative;display:inline-flex; }
+.icon-picker-popover {
+  display:none;position:absolute;top:calc(100% + 8px);left:0;
+  width:232px;
+  background:var(--bg2);border:1px solid var(--border2);border-radius:14px;
+  padding:10px;box-shadow:0 8px 32px rgba(0,0,0,0.28);z-index:300;
+}
+.icon-picker-popover.open { display:block;animation:fadeUp 0.16s ease both; }
+.icon-picker-popover::before {
+  content:'';position:absolute;top:-6px;left:14px;
+  width:10px;height:10px;background:var(--bg2);
+  border-left:1px solid var(--border2);border-top:1px solid var(--border2);
+  transform:rotate(45deg);
+}
+.icon-picker-grid { display:grid;grid-template-columns:repeat(8,1fr);gap:2px; }
+.icon-picker-btn {
+  width:26px;height:26px;border-radius:7px;border:none;background:transparent;
+  font-size:16px;cursor:pointer;display:grid;place-items:center;
+  transition:background 0.12s;-webkit-tap-highlight-color:transparent;
+  line-height:1;
+}
+.icon-picker-btn:hover { background:var(--surfaceHov); }
+.icon-picker-btn.selected { background:var(--accent-bg);outline:2px solid var(--accent);outline-offset:-1px; }
 /* find-a-tab */
 .find-tab-row { display:flex;gap:8px;margin-top:10px; }
 .find-tab-row input { flex:1;font-size:15px;letter-spacing:0.5px; }
@@ -480,7 +504,7 @@ select option { background:var(--bg2);color:var(--text); }
     <div class="demo-cards-section" id="demo-cards-section" style="display:none;">
       <div class="demo-cards-toggle" onclick="toggleDemoCards()">
         <span class="demo-cards-toggle-label">Try a demo</span>
-        <span class="demo-cards-toggle-chevron">▼</span>
+        <span class="demo-cards-toggle-chevron">▶</span>
       </div>
       <div class="demo-cards-list-wrap">
         <div class="demo-card-list" id="demo-card-list"></div>
@@ -635,6 +659,11 @@ select option { background:var(--bg2);color:var(--text); }
   <div class="logo-mark"><div class="arrow-head"></div><div class="arrow-shaft"></div></div>
   <div class="spinner"></div>
   <div id="db-overlay-msg" style="color:var(--text2);font-size:14px;font-weight:500;">Loading tab…</div>
+</div>
+
+<!-- Icon picker popover (shared, positioned via JS) -->
+<div class="icon-picker-popover" id="icon-picker-popover">
+  <div class="icon-picker-grid" id="icon-picker-grid"></div>
 </div>
 
 <!-- Toast -->
@@ -1898,6 +1927,83 @@ function removeRecentTab(code) {
   renderRecentTabs();
 }
 
+// ── ICON PICKER ──────────────────────────────────────────
+const ICON_PICKER_EMOJIS = [
+  // Travel & places
+  '✈️','🏖️','🏔️','⛺','🚗','🚢','🚂','🏕️','🗺️','🌍',
+  // Food & drink
+  '🍕','🍣','🍜','🌮','🍻','🥂','🍷','☕','🍰','🎂',
+  // Events & activities
+  '🎉','🎸','🎭','🎲','⚽','🎿','🏄','🎓','💍','🎪',
+  // Home & misc
+  '🏠','💼','🎁','🎵','📸','🌅','🌴','🦁','🐠','🌺',
+];
+
+let _iconPickerCode = null; // which tab code is being edited
+
+function openIconPicker(e, code) {
+  e.stopPropagation();
+  const pop = document.getElementById('icon-picker-popover');
+  const grid = document.getElementById('icon-picker-grid');
+
+  // If already open for same tab, close it
+  if(pop.classList.contains('open') && _iconPickerCode === code) {
+    pop.classList.remove('open');
+    _iconPickerCode = null;
+    return;
+  }
+
+  _iconPickerCode = code;
+
+  // Get current icon for this tab
+  const tabs = loadRecentTabs();
+  const tab = tabs.find(t => t.code === code);
+  const currentIcon = tab?.icon || '🧾';
+
+  // Render grid
+  grid.innerHTML = ICON_PICKER_EMOJIS.map(em =>
+    `<button class="icon-picker-btn${em === currentIcon ? ' selected' : ''}"
+      onclick="setTabIcon('${code}', '${em}')">${em}</button>`
+  ).join('');
+
+  // Position: anchor to the clicked icon element
+  const iconEl = e.currentTarget;
+  const iconRect = iconEl.getBoundingClientRect();
+  const appEl = document.querySelector('.app');
+  const appRect = appEl.getBoundingClientRect();
+
+  // Position relative to viewport, then account for scroll
+  pop.style.position = 'fixed';
+  pop.style.top = (iconRect.bottom + 8) + 'px';
+  pop.style.left = Math.max(8, Math.min(iconRect.left, window.innerWidth - 248)) + 'px';
+  pop.style.bottom = 'auto';
+
+  pop.classList.add('open');
+
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener('click', function _close() {
+      pop.classList.remove('open');
+      _iconPickerCode = null;
+      document.removeEventListener('click', _close);
+    });
+  }, 0);
+}
+
+function setTabIcon(code, emoji) {
+  let tabs = loadRecentTabs();
+  const idx = tabs.findIndex(t => t.code === code);
+  if(idx !== -1) {
+    tabs[idx].icon = emoji;
+    try { localStorage.setItem(RECENT_TABS_KEY, JSON.stringify(tabs)); } catch(e) {}
+  }
+  // Close popover
+  document.getElementById('icon-picker-popover').classList.remove('open');
+  _iconPickerCode = null;
+  // Re-render the list so the new icon shows immediately
+  renderRecentTabs();
+}
+
 function renderRecentTabs() {
   const tabs = loadRecentTabs();
   const wrap = document.getElementById('recent-list-wrap');
@@ -1907,7 +2013,7 @@ function renderRecentTabs() {
   list.innerHTML = tabs.map(t => {
     const ago = formatTimeAgo(t.visited);
     return `<div class="recent-tab-item" style="padding-right:8px;">
-      <div class="recent-tab-icon" onclick="openTabByCode('${escHtml(t.code)}')" style="cursor:pointer;">${t.icon || '🧾'}</div>
+      <div class="recent-tab-icon" onclick="openIconPicker(event, '${escHtml(t.code)}')" title="Change icon" style="cursor:pointer;position:relative;">${t.icon || '🧾'}</div>
       <div class="recent-tab-info" onclick="openTabByCode('${escHtml(t.code)}')" style="cursor:pointer;">
         <div class="recent-tab-name">${escHtml(t.name)}</div>
         <div class="recent-tab-meta">${escHtml(t.code)} · ${ago}</div>
