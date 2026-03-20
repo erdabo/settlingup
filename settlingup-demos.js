@@ -214,36 +214,22 @@ window.SETTLINGUP_DEMOS = [
         splitWith: [0,1,2,3,4,5], splitAmounts: null
       },
       {
-        id: 1, desc: "Dinner — Osteria (food)", amount: 310.00,
+        // Custom split: per-person food amounts, tax + tip distributed proportionately
+        // Total: $310 food + $24.80 tax (8%) + $62.00 tip (20%) = $396.80
+        id: 1, desc: "Dinner — Osteria", amount: 396.80,
         paidBy: 1, splitType: "custom",
         splitWith: [0,1,2,3,4,5],
         splitAmounts: {
-          0: 46.00, 1: 58.00, 2: 52.00,
-          3: 46.00, 4: 54.00, 5: 54.00
+          // Base food shares with tax+tip distributed proportionately by the app
+          // (46/310 * 86.80 = 12.88 extra for Sam, etc.)
+          0: 58.88, 1: 74.24, 2: 66.56,
+          3: 58.88, 4: 69.12, 5: 69.12
         }
       },
       {
         id: 2, desc: "Wine — bottle at dinner", amount: 95.00,
         paidBy: 2, splitType: "even",
         splitWith: [0,1,2,3,4,5], splitAmounts: null
-      },
-      {
-        id: 8, desc: "Dinner tax (8%)", amount: 24.80,
-        paidBy: 1, splitType: "custom",
-        splitWith: [0,1,2,3,4,5],
-        splitAmounts: {
-          0: 3.68, 1: 4.64, 2: 4.16,
-          3: 3.68, 4: 4.32, 5: 4.32
-        }
-      },
-      {
-        id: 9, desc: "Dinner tip (20%)", amount: 62.00,
-        paidBy: 1, splitType: "custom",
-        splitWith: [0,1,2,3,4,5],
-        splitAmounts: {
-          0: 9.20, 1: 11.60, 2: 10.40,
-          3: 9.20, 4: 10.80, 5: 10.80
-        }
       },
       {
         id: 3, desc: "Bowling — shoes & games", amount: 132.00,
