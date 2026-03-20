@@ -371,6 +371,39 @@ select option { background: var(--bg2); color: var(--text); }
 .edit-mode-banner button { background: transparent; border: none; color: var(--text2); font-size: 13px; cursor: pointer; font-family: 'Outfit', sans-serif; padding: 0; -webkit-tap-highlight-color: transparent; }
 .edit-mode-banner button:hover { color: var(--text); }
 
+/* ─── DB OVERLAY (loading / error) ─── */
+.db-overlay {
+  position: fixed; inset: 0; background: var(--bg); z-index: 999;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+}
+.db-overlay.hidden { display: none; }
+.spinner {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid var(--border); border-top-color: var(--accent);
+  animation: spin 0.75s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── TOAST ─── */
+.toast {
+  position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+  background: var(--bg2); border: 1px solid var(--border2); border-radius: 12px;
+  padding: 11px 18px; font-size: 14px; font-weight: 500; z-index: 998;
+  pointer-events: none; opacity: 0; transition: opacity 0.2s; white-space: nowrap;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+}
+.toast.show { opacity: 1; }
+.toast.error { border-color: var(--red); color: var(--red); }
+
+/* ─── CONNECTION DOT ─── */
+.conn-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text3); flex-shrink: 0; transition: background 0.4s;
+  cursor: default;
+}
+.conn-dot.live { background: var(--green); box-shadow: 0 0 5px var(--green); }
+.conn-dot.error { background: var(--red); }
+
 /* ─── SHARE BUTTON ─── */
 .share-btn { display: flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); color: var(--text2); font-size: 13px; font-family: 'Outfit', sans-serif; font-weight: 600; cursor: pointer; transition: all 0.2s; -webkit-tap-highlight-color: transparent; }
 .share-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -387,6 +420,7 @@ select option { background: var(--bg2); color: var(--text); }
       <div class="arrow-shaft"></div>
     </div>
     <div class="logo-text">Settling<span>Up</span></div>
+    <div id="conn-dot" class="conn-dot" style="display:none" title="Live — updates in real time"></div>
     <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Toggle theme">🌙</button>
   </div>
 
@@ -525,6 +559,16 @@ select option { background: var(--bg2); color: var(--text); }
 
 </div><!-- /app -->
 
+<!-- DB loading overlay -->
+<div id="db-overlay" class="db-overlay hidden">
+  <div class="logo-mark"><div class="arrow-head"></div><div class="arrow-shaft"></div></div>
+  <div class="spinner"></div>
+  <div id="db-overlay-msg" style="color:var(--text2);font-size:14px;font-weight:500;">Loading tab…</div>
+</div>
+
+<!-- Toast notification -->
+<div id="toast" class="toast"></div>
+
 <script>
 // ─── THEME ───────────────────────────────────────────────
 let currentTheme = localStorage.getItem('su-theme') || 'dark';
@@ -538,10 +582,12 @@ function toggleTheme() { applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
 applyTheme(currentTheme);
 
 // ─── STATE ───────────────────────────────────────────────
-let state = { tabName:'', people:[], expenses:[], currentSplitType:'even' };
+let state = { tabName:'', people:[], expenses:[], currentSplitType:'even', tabId:null, shortCode:null };
 let personIdSeq=0, expenseIdSeq=0, paymentMode='simplified';
 let _simplifiedPayments=[], _directPayments=[];
-let editingId = null; // id of expense being edited, or null
+let editingId = null;
+let db = null;           // Supabase client — null until configured
+let realtimeChannel = null;
 
 const COLORS=['av-0','av-1','av-2','av-3','av-4','av-5','av-6','av-7'];
 function avatarClass(i){return COLORS[i%COLORS.length];}
@@ -559,10 +605,13 @@ function goStep(n) {
 }
 function startOver(){
   if(!confirm('Start a new tab? This will clear everything.')) return;
-  state={tabName:'',people:[],expenses:[],currentSplitType:'even'};
+  if(realtimeChannel){ realtimeChannel.unsubscribe(); realtimeChannel=null; }
+  state={tabName:'',people:[],expenses:[],currentSplitType:'even',tabId:null,shortCode:null};
   personIdSeq=0; expenseIdSeq=0;
   document.getElementById('tab-name').value='';
   document.getElementById('people-list').innerHTML='';
+  document.getElementById('conn-dot').style.display='none';
+  history.replaceState(null,'','/');
   goStep(0);
 }
 
@@ -706,14 +755,19 @@ function addExpense(){
   }
 
   if(editingId !== null) {
-    const idx=state.expenses.findIndex(e=>e.id===editingId);
-    if(idx!==-1) state.expenses[idx]={id:editingId,desc,amount,paidBy:selectedPaidBy,splitType:state.currentSplitType,splitWith,splitAmounts};
+    const wasId=editingId;
+    const idx=state.expenses.findIndex(e=>e.id===wasId);
+    const updated={id:wasId,desc,amount,paidBy:selectedPaidBy,splitType:state.currentSplitType,splitWith,splitAmounts};
+    if(idx!==-1) state.expenses[idx]=updated;
     editingId=null;
     document.getElementById('edit-mode-banner').style.display='none';
     document.getElementById('add-expense-card').classList.remove('edit-mode');
     document.getElementById('add-expense-btn').textContent='+ Add expense';
+    if(db && state.tabId){ deleteExpenseFromSupabase(wasId).then(()=>saveExpenseToSupabase(updated)); }
   } else {
-    state.expenses.push({id:expenseIdSeq++,desc,amount,paidBy:selectedPaidBy,splitType:state.currentSplitType,splitWith,splitAmounts});
+    const newExp={id:expenseIdSeq++,desc,amount,paidBy:selectedPaidBy,splitType:state.currentSplitType,splitWith,splitAmounts};
+    state.expenses.push(newExp);
+    if(db && state.tabId) saveExpenseToSupabase(newExp);
   }
 
   document.getElementById('exp-desc').value='';
@@ -727,7 +781,12 @@ function addExpense(){
   document.querySelectorAll('#personalfor-btns .person-btn').forEach(b=>b.classList.remove('selected-for'));
   setSplitType('even');renderCustomAmountRows();renderExpenseList();
 }
-function removeExpense(id){state.expenses=state.expenses.filter(e=>e.id!==id);if(editingId===id)cancelEdit();renderExpenseList();}
+function removeExpense(id){
+  state.expenses=state.expenses.filter(e=>e.id!==id);
+  if(editingId===id)cancelEdit();
+  if(db && state.tabId) deleteExpenseFromSupabase(id);
+  renderExpenseList();
+}
 
 function editExpense(id) {
   const exp = state.expenses.find(e=>e.id===id);
@@ -864,8 +923,12 @@ function updateCardDetailPayments(pid,payments,mode){
   el.innerHTML=`<div class="detail-section-title">${mode==='simplified'?'Simplified payments':'Direct payments'}</div>`+
     rel.map(pay=>{const other=state.people.find(pp=>pp.id===(pay.from===pid?pay.to:pay.from));const dir=pay.from===pid?`${escHtml(other?.name||'?')} receives`:`${escHtml(other?.name||'?')} sends`;return `<div class="detail-line"><span class="dl-desc">${pay.from===pid?`Pay ${escHtml(other?.name||'?')}`:`${escHtml(other?.name||'?')} pays you`}</span><span class="dl-amount" style="color:var(--accent)">${fmt(pay.amount)}</span></div>`;}).join('');
 }
-function goSettle(){
+async function goSettle(){
   if(!state.expenses.length){alert('Add at least one expense first.');return;}
+  if(db && !state.tabId){
+    try { await createTab(); }
+    catch(err){ console.warn('Could not save tab to Supabase:', err); }
+  }
   const balances={};state.people.forEach(p=>{balances[p.id]=0;});
   state.expenses.forEach(exp=>{
     balances[exp.paidBy]+=exp.amount;
@@ -966,8 +1029,211 @@ function renderPaymentsList(payments){
 function toggleCard(id){document.getElementById('pcard-'+id).classList.toggle('expanded');}
 function markDone(i){const el=document.getElementById('done-'+i);el.classList.toggle('marked');el.textContent=el.classList.contains('marked')?'✓ Done':'Paid ✓';}
 
+// ─── SUPABASE ────────────────────────────────────────────
+
+// SHA-256 hex via SubtleCrypto (no server needed)
+async function sha256hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+// 6-char base58 code (no 0/O/1/I/l to avoid confusion)
+function makeShortCode() {
+  const alpha = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz';
+  const arr = new Uint8Array(6);
+  crypto.getRandomValues(arr);
+  return Array.from(arr).map(b=>alpha[b%alpha.length]).join('');
+}
+
+function expenseToRow(e, tabId) {
+  return { id:e.id, tab_id:tabId, description:e.desc, amount:e.amount,
+           paid_by:e.paidBy, split_type:e.splitType,
+           split_with:e.splitWith, split_amounts:e.splitAmounts||null };
+}
+function rowToExpense(r) {
+  return { id:r.id, desc:r.description, amount:parseFloat(r.amount),
+           paidBy:r.paid_by, splitType:r.split_type,
+           splitWith:r.split_with, splitAmounts:r.split_amounts||null };
+}
+
+// Create a brand-new tab in Supabase, push URL to /t/<code>
+async function createTab() {
+  const ownerToken = crypto.randomUUID();
+  let shortCode = makeShortCode();
+  const tokenHash = await sha256hex(ownerToken);
+
+  // Retry on short-code collision (astronomically rare)
+  let data, error;
+  for(let attempt=0; attempt<3; attempt++) {
+    ({data, error} = await db.from('tabs').insert({
+      short_code: shortCode, tab_name: state.tabName,
+      people: state.people, person_id_seq: personIdSeq,
+      owner_token_hash: tokenHash
+    }).select('id').single());
+    if(!error) break;
+    if(error.code === '23505') { shortCode = makeShortCode(); continue; } // unique violation
+    throw error;
+  }
+  if(error) throw error;
+
+  localStorage.setItem('su-owner-'+shortCode, ownerToken);
+  state.tabId = data.id;
+  state.shortCode = shortCode;
+
+  if(state.expenses.length) {
+    const rows = state.expenses.map(e=>expenseToRow(e, data.id));
+    const {error:expErr} = await db.from('expenses').insert(rows);
+    if(expErr) throw expErr;
+  }
+
+  history.pushState({}, '', '/t/'+shortCode);
+}
+
+// Load a tab by short code from Supabase
+async function loadTabFromSupabase(code) {
+  showDbOverlay('Loading tab…');
+  try {
+    const {data:tab, error:tabErr} = await db.from('tabs')
+      .select('*').eq('short_code', code).single();
+    if(tabErr || !tab) { showDbOverlay('Tab not found.', true); return; }
+
+    const {data:exps, error:expErr} = await db.from('expenses')
+      .select('*').eq('tab_id', tab.id).order('created_at');
+    if(expErr) throw expErr;
+
+    state.tabId = tab.id;
+    state.shortCode = code;
+    state.tabName = tab.tab_name;
+    state.people = tab.people;
+    state.expenses = (exps||[]).map(rowToExpense);
+    state.currentSplitType = 'even';
+    personIdSeq = tab.person_id_seq;
+    expenseIdSeq = state.expenses.length ? Math.max(...state.expenses.map(e=>e.id))+1 : 0;
+
+    document.getElementById('tab-name').value = state.tabName;
+    renderPeopleList();
+    renderExpenseStep();
+    goSettle();
+    subscribeToTab(tab.id);
+    hideDbOverlay();
+  } catch(err) {
+    console.error('loadTabFromSupabase:', err);
+    showDbOverlay('Could not load this tab. Check your connection.', true);
+  }
+}
+
+// Realtime subscription for an open tab
+function subscribeToTab(tabId) {
+  if(realtimeChannel) { realtimeChannel.unsubscribe(); realtimeChannel=null; }
+  const dot = document.getElementById('conn-dot');
+  dot.style.display = '';
+
+  realtimeChannel = db.channel('tab-'+tabId)
+    .on('postgres_changes',
+      {event:'INSERT', schema:'public', table:'expenses', filter:'tab_id=eq.'+tabId},
+      payload => {
+        const exp = rowToExpense(payload.new);
+        if(state.expenses.find(e=>e.id===exp.id)) return; // our own optimistic insert
+        state.expenses.push(exp);
+        expenseIdSeq = Math.max(expenseIdSeq, exp.id+1);
+        if(document.getElementById('step-2').classList.contains('active')) renderExpenseList();
+      })
+    .on('postgres_changes',
+      {event:'DELETE', schema:'public', table:'expenses', filter:'tab_id=eq.'+tabId},
+      payload => {
+        state.expenses = state.expenses.filter(e=>e.id!==payload.old.id);
+        if(document.getElementById('step-2').classList.contains('active')) renderExpenseList();
+      })
+    .on('postgres_changes',
+      {event:'UPDATE', schema:'public', table:'tabs', filter:'id=eq.'+tabId},
+      payload => {
+        state.people = payload.new.people;
+        personIdSeq = payload.new.person_id_seq;
+        state.tabName = payload.new.tab_name;
+        renderPeopleList();
+      })
+    .subscribe(status => {
+      dot.className = 'conn-dot ' + (status==='SUBSCRIBED' ? 'live' : status==='CLOSED'||status==='CHANNEL_ERROR' ? 'error' : '');
+    });
+}
+
+// Optimistically save a new expense; roll back on failure
+async function saveExpenseToSupabase(exp) {
+  if(!db || !state.tabId) return;
+  const {error} = await db.from('expenses').insert(expenseToRow(exp, state.tabId));
+  if(error) {
+    showToast('Could not save expense — try again.', true);
+    state.expenses = state.expenses.filter(e=>e.id!==exp.id);
+    expenseIdSeq = exp.id; // reclaim the id
+    renderExpenseList();
+  }
+}
+
+// Delete an expense from Supabase (owner token required by RLS)
+async function deleteExpenseFromSupabase(id) {
+  if(!db || !state.tabId) return;
+  await setOwnerToken();
+  const {error} = await db.from('expenses').delete()
+    .eq('tab_id', state.tabId).eq('id', id);
+  if(error) console.warn('deleteExpense:', error.message);
+}
+
+// Sync tab metadata (name + people) after local changes
+async function syncTabMeta() {
+  if(!db || !state.tabId) return;
+  await setOwnerToken();
+  await db.from('tabs').update({
+    tab_name: state.tabName, people: state.people, person_id_seq: personIdSeq
+  }).eq('id', state.tabId);
+}
+
+// Call Supabase RPC to set owner token for the current request session
+async function setOwnerToken() {
+  const token = localStorage.getItem('su-owner-'+state.shortCode);
+  if(token) await db.rpc('set_owner_token', {token});
+}
+
+// ─── UI HELPERS ──────────────────────────────────────────
+let _toastTimer = null;
+function showToast(msg, isError=false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (isError?' error':'');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(()=>{ el.className='toast'; }, 3500);
+}
+function showDbOverlay(msg, isError=false) {
+  const el = document.getElementById('db-overlay');
+  document.getElementById('db-overlay-msg').textContent = msg;
+  el.className = 'db-overlay';
+  // hide spinner on error
+  el.querySelector('.spinner').style.display = isError ? 'none' : '';
+  if(isError) {
+    // add a "go home" button
+    let btn = el.querySelector('.db-overlay-home');
+    if(!btn) {
+      btn = document.createElement('button');
+      btn.className = 'btn btn-secondary db-overlay-home';
+      btn.textContent = '← Start a new tab';
+      btn.onclick = () => { hideDbOverlay(); history.replaceState(null,'','/'); };
+      el.appendChild(btn);
+    }
+  }
+}
+function hideDbOverlay() {
+  document.getElementById('db-overlay').className = 'db-overlay hidden';
+}
+
 // ─── SHAREABLE URL ───────────────────────────────────────
 async function shareTab() {
+  // If the tab is saved in Supabase, share the short URL
+  if(state.shortCode) {
+    const url = window.location.origin + '/t/' + state.shortCode;
+    try { await navigator.clipboard.writeText(url); showCopied(); }
+    catch(e) { fallbackCopy(url); }
+    return;
+  }
+  // Otherwise fall back to compressed hash URL
   try {
     const payload = {
       t: state.tabName,
@@ -1083,11 +1349,27 @@ function loadDemo(){
   renderPeopleList();renderExpenseStep();goStep(2);
 }
 window.addEventListener('load', async ()=>{
+  // Init Supabase if config is present and filled in
+  if(window.supabase && window.SUPABASE_URL && !window.SUPABASE_URL.includes('YOUR_PROJECT')) {
+    db = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON);
+  }
+
+  // /t/<code> path → load from Supabase
+  const pathMatch = window.location.pathname.match(/^\/t\/([A-Za-z0-9]{4,12})$/);
+  if(pathMatch) {
+    if(!db){ showDbOverlay('Supabase is not configured yet.', true); return; }
+    await loadTabFromSupabase(pathMatch[1]);
+    return;
+  }
+
+  // Otherwise: demo button + hash URL fallback
   if(window.SETTLINGUP_DEMO) document.getElementById('demo-btn').style.display='';
   await loadFromUrl();
 });
 </script>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="supabase-config.js" onerror="console.log('No Supabase config — running in local mode.')"></script>
 <script src="settlingup-demo.js" onerror="console.log('No demo file — thats fine.')"></script>
 </body>
 </html>
