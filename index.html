@@ -191,11 +191,17 @@ select option { background:var(--bg2);color:var(--text); }
 .form-row > * { flex:1; }
 .form-label { font-size:12px;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;font-weight:600; }
 
+/* TAB NAMEPLATE (step 2) */
+.tab-nameplate { margin-bottom:20px; }
+.tab-nameplate-name { font-family:'Outfit',sans-serif;font-size:26px;font-weight:800;letter-spacing:-0.4px;line-height:1.1;color:var(--text);margin-bottom:2px; }
+.tab-nameplate-label { font-size:13px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:600; }
+
 /* SETTLE HERO */
-.settle-hero { text-align:center;padding:24px 0 20px; }
-.confetti-wrap { display:flex;justify-content:center;gap:4px;font-size:26px;margin-bottom:8px; }
-.settle-hero-title { font-family:'Outfit',sans-serif;font-size:28px;font-weight:800;letter-spacing:-0.5px;line-height:1.1;margin-bottom:6px; }
-.settle-hero-title span { color:var(--accent); }
+.settle-hero { text-align:center;padding:20px 0 18px; }
+.confetti-wrap { display:flex;justify-content:center;gap:4px;font-size:22px;margin-bottom:10px; }
+.settle-hero-tab-name { font-family:'Outfit',sans-serif;font-size:30px;font-weight:800;letter-spacing:-0.5px;line-height:1.1;margin-bottom:4px;color:var(--text); }
+.settle-hero-title { font-family:'Outfit',sans-serif;font-size:15px;font-weight:500;color:var(--text2);margin-bottom:0; }
+.settle-hero-title span { color:var(--accent);font-weight:600; }
 .settle-sub { color:var(--text2);font-size:14px; }
 
 /* SUMMARY BAR */
@@ -284,6 +290,7 @@ select option { background:var(--bg2);color:var(--text); }
 /* IDENTITY */
 .identity-btn { display:flex;align-items:center;gap:14px;background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:14px 18px;width:100%;font-family:'Outfit',sans-serif;font-size:16px;font-weight:600;color:var(--text);cursor:pointer;text-align:left;transition:all 0.15s;-webkit-tap-highlight-color:transparent; }
 .identity-btn:hover { border-color:var(--accent);background:var(--accent-bg);color:var(--accent); }
+.identity-btn-active { border-color:var(--accent) !important;background:var(--accent-bg) !important;color:var(--accent) !important; }
 .identity-chip { font-size:12px;color:var(--text2);cursor:pointer;padding:5px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);transition:all 0.15s;white-space:nowrap;font-family:'Outfit',sans-serif;font-weight:500;-webkit-tap-highlight-color:transparent; }
 .identity-chip:hover { border-color:var(--accent);color:var(--accent); }
 
@@ -320,8 +327,8 @@ select option { background:var(--bg2);color:var(--text); }
 <div class="app">
 
   <div class="header">
-    <div class="logo-mark"><div class="arrow-head"></div><div class="arrow-shaft"></div></div>
-    <div class="logo-text">Settling<span>Up</span></div>
+    <div class="logo-mark" onclick="goHome()" style="cursor:pointer;" title="Home"><div class="arrow-head"></div><div class="arrow-shaft"></div></div>
+    <div class="logo-text" onclick="goHome()" style="cursor:pointer;" title="Home">Settling<span>Up</span></div>
     <div id="conn-dot" class="conn-dot" style="display:none" title="Live — updates in real time"></div>
     <button id="identity-chip" class="identity-chip" style="display:none" onclick="showIdentityPicker()">👤 <span id="identity-name"></span></button>
     <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Toggle theme">🌙</button>
@@ -357,11 +364,7 @@ select option { background:var(--bg2);color:var(--text); }
     <div class="card">
       <div class="card-label">People on this tab</div>
       <div class="people-list" id="people-list"></div>
-      <div id="identity-step1-wrap" style="display:none;">
-        <hr class="divider" style="margin:12px 0 10px;">
-        <div class="form-label" style="margin-bottom:8px;">Which one is you? <span class="optional-label">optional</span></div>
-        <div class="person-btn-grid" id="identity-step1-btns"></div>
-      </div>
+      <div id="identity-step1-wrap" style="display:none;"></div>
       <hr class="divider" style="margin:12px 0 10px;">
       <div class="add-person-row">
         <input id="new-person-input" type="text" placeholder="Add a name…" maxlength="30" autocomplete="off" onkeydown="if(event.key==='Enter') addPerson()">
@@ -377,8 +380,10 @@ select option { background:var(--bg2);color:var(--text); }
 
   <!-- STEP 2 -->
   <div class="step" id="step-2">
-    <div class="section-title">Add expenses</div>
-    <div class="section-sub">Who paid, what for, who does it cover?</div>
+    <div class="tab-nameplate" id="step2-nameplate">
+      <div class="tab-nameplate-name" id="step2-tab-name"></div>
+      <div class="tab-nameplate-label">Add expenses</div>
+    </div>
     <div id="expense-list-wrap"></div>
     <div id="edit-mode-banner" style="display:none" class="edit-mode-banner">
       <span>✏️ Editing expense</span>
@@ -439,8 +444,8 @@ select option { background:var(--bg2);color:var(--text); }
   <div class="step" id="step-3">
     <div class="settle-hero">
       <div class="confetti-wrap" id="confetti">🎉</div>
+      <div class="settle-hero-tab-name" id="settle-tab-name"></div>
       <div class="settle-hero-title">Here's how we're <span>settling up</span></div>
-      <div class="settle-sub" id="settle-tab-name"></div>
     </div>
     <div class="summary-bar" id="summary-bar"></div>
     <div id="validation-banner"></div>
@@ -468,10 +473,10 @@ select option { background:var(--bg2);color:var(--text); }
 
 <!-- Identity picker -->
 <div id="identity-picker" class="db-overlay hidden">
-  <div style="text-align:center;max-width:340px;width:100%;padding:0 20px;">
-    <div style="font-size:28px;font-weight:800;letter-spacing:-0.5px;margin-bottom:6px;">Who are you?</div>
-    <div style="color:var(--text2);font-size:14px;margin-bottom:24px;">We'll personalize the view for you.</div>
-    <div id="identity-people-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+  <div style="text-align:center;max-width:360px;width:100%;padding:0 20px;">
+    <div class="identity-picker-title" style="font-size:28px;font-weight:800;letter-spacing:-0.5px;margin-bottom:6px;">Who are you?</div>
+    <div class="identity-picker-sub" style="color:var(--text2);font-size:14px;margin-bottom:24px;">Pick your name or add yourself to the tab.</div>
+    <div id="identity-people-list" style="display:flex;flex-direction:column;gap:10px;text-align:left;"></div>
     <button class="btn btn-ghost" style="margin-top:14px;font-size:13px;" onclick="setMyIdentity(null)">Skip for now</button>
   </div>
 </div>
@@ -521,21 +526,31 @@ function nextTempId() { return _tempIdSeq--; }
 
 // ─── NAV ─────────────────────────────────────────────────
 async function goStep(n) {
-  if(n === 1) state.tabName = document.getElementById('tab-name').value.trim() || 'Our Tab';
+  if(n === 1) {
+    state.tabName = document.getElementById('tab-name').value.trim() || 'Our Tab';
+    renderPeopleList();
+  }
   if(n === 2) {
     if(state.people.length < 2) { alert('Add at least 2 people first.'); return; }
     renderExpenseStep();
-    // Create the tab in Supabase immediately so the URL is shareable
-    // and realtime sync starts before any expenses are added.
+    // Create the tab in Supabase immediately — tab saves here
     if(db && !state.tabId) {
       try {
         await createTab();
         subscribeToTab(state.tabId);
-        // Show shareable URL in address bar immediately — no need to press Share
         document.getElementById('conn-dot').style.display = '';
       } catch(err) {
         console.warn('Could not auto-create tab:', err);
       }
+    }
+    // Keep URL in sync so refresh restores this page
+    if(state.shortCode) {
+      const url = window.location.origin + '/t/' + state.shortCode + '?p=e';
+      history.replaceState(null, '', url);
+    }
+    // Show identity picker for the creator if not yet set
+    if(state.myPersonId === null) {
+      setTimeout(() => showIdentityPickerForJoin(true), 200);
     }
   }
   document.querySelectorAll('.step').forEach((el,i) => el.classList.toggle('active', i === n));
@@ -545,6 +560,10 @@ async function goStep(n) {
     if(i === n) el.classList.add('active');
   });
   window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function goHome() {
+  window.location.href = '/';
 }
 
 function startOver() {
@@ -572,7 +591,29 @@ function addPerson() {
   if(db && state.tabId) syncTabMeta();
 }
 
-function removePerson(id) {
+async function removePerson(id) {
+  const person = state.people.find(p => p.id === id);
+  if(!person) return;
+
+  // Find all expenses this person touches (paid or split)
+  const affected = state.expenses.filter(e => e.paidBy === id || e.splitWith.includes(id));
+
+  if(affected.length) {
+    const names = [...new Set(affected.map(e => e.desc))].slice(0, 5);
+    const more = affected.length > 5 ? ` and ${affected.length - 5} more` : '';
+    const ok = confirm(
+      `Remove ${person.name}?\n\nThis will also delete ${affected.length} expense${affected.length !== 1 ? 's' : ''} they're on:\n• ${names.join('\n• ')}${more}\n\nThis cannot be undone.`
+    );
+    if(!ok) return;
+
+    // Delete affected expenses from DB then state
+    for(const exp of affected) {
+      state.expenses = state.expenses.filter(e => e.id !== exp.id);
+      if(db && state.tabId) await deleteExpenseFromSupabase(exp.id);
+    }
+    renderExpenseList();
+  }
+
   state.people = state.people.filter(p => p.id !== id);
   if(isMe(id)) { state.myPersonId = null; updateIdentityChip(); }
   renderPeopleList();
@@ -586,19 +627,11 @@ function renderPeopleList() {
   l.innerHTML = state.people.map((p,i) =>
     `<div class="person-chip">
       <div class="person-avatar ${avatarClass(i)}">${initials(p.name)}</div>
-      <div class="person-name">${escHtml(p.name)}</div>
+      <div class="person-name">${pName(p)}</div>
       <button class="btn btn-danger" onclick="removePerson(${p.id})">✕</button>
     </div>`
   ).join('');
-  if(wrap) {
-    wrap.style.display = '';
-    document.getElementById('identity-step1-btns').innerHTML = state.people.map((p,i) =>
-      `<button class="person-btn${isMe(p.id)?' selected-payer':''}" id="idme-${p.id}" onclick="setMyIdentity(${p.id})">
-        <span class="person-avatar ${avatarClass(i)}" style="width:22px;height:22px;font-size:10px;border-radius:50%;display:inline-grid;place-items:center;flex-shrink:0;">${initials(p.name)}</span>
-        ${escHtml(p.name)}
-      </button>`
-    ).join('');
-  }
+  // identity-step1-btns was removed — identity is now set at step 2
 }
 
 // ─── EXPENSES ────────────────────────────────────────────
@@ -606,6 +639,9 @@ let selectedPaidBy = null, selectedPersonalFor = null;
 
 function renderExpenseStep() {
   selectedPaidBy = null; selectedPersonalFor = null;
+  // Show tab name in the step 2 header
+  const nameEl = document.getElementById('step2-tab-name');
+  if(nameEl) nameEl.textContent = state.tabName || 'Your Tab';
   renderPaidByBtns(); renderPersonalForBtns(); renderCustomAmountRows();
   setSplitType('even'); renderExpenseList();
 }
@@ -614,7 +650,7 @@ function renderPaidByBtns() {
   document.getElementById('paidby-btns').innerHTML = state.people.map((p,i) =>
     `<button class="person-btn" id="pb-${p.id}" onclick="selectPaidBy(${p.id})">
       <span class="person-avatar ${avatarClass(i)}" style="width:22px;height:22px;font-size:10px;border-radius:50%;display:inline-grid;place-items:center;flex-shrink:0;">${initials(p.name)}</span>
-      ${escHtml(p.name)}
+      ${pName(p)}
     </button>`
   ).join('');
 }
@@ -629,7 +665,7 @@ function renderPersonalForBtns() {
   document.getElementById('personalfor-btns').innerHTML = state.people.map((p,i) =>
     `<button class="person-btn" id="pf-${p.id}" onclick="selectPersonalFor(${p.id})">
       <span class="person-avatar ${avatarClass(i)}" style="width:22px;height:22px;font-size:10px;border-radius:50%;display:inline-grid;place-items:center;flex-shrink:0;">${initials(p.name)}</span>
-      ${escHtml(p.name)}
+      ${pName(p)}
     </button>`
   ).join('');
 }
@@ -648,7 +684,7 @@ function renderCustomAmountRows() {
       <div class="include-toggle" onclick="toggleCustomInclude(${p.id})" title="Include/exclude">✓</div>
       <div class="person-label">
         <span class="person-avatar ${avatarClass(i)}" style="width:26px;height:26px;font-size:11px;border-radius:50%;display:inline-grid;place-items:center;flex-shrink:0;">${initials(p.name)}</span>
-        ${escHtml(p.name)}
+        ${pName(p)}
       </div>
       <input type="number" id="custom-amt-${p.id}" placeholder="$0.00" min="0" step="0.01" oninput="updateCustomTotal()">
     </div>`
@@ -858,9 +894,9 @@ function renderExpenseList() {
     const tc = exp.splitType==='even' ? 'tag-even' : exp.splitType==='custom' ? 'tag-custom' : 'tag-personal';
     let sd = '';
     if(exp.splitType === 'custom' && exp.splitAmounts) {
-      sd = exp.splitWith.map(id => { const p=state.people.find(p=>p.id===id); return p?`${escHtml(p.name)}: ${fmt(exp.splitAmounts[id]||0)}`:''; }).filter(Boolean).join(' · ');
+      sd = exp.splitWith.map(id => { const p=state.people.find(pp=>pp.id===id); return p?`${pName(p)}: ${fmt(exp.splitAmounts[id]||0)}`:''; }).filter(Boolean).join(' · ');
     } else {
-      sd = escHtml(exp.splitWith.map(id => state.people.find(p=>p.id===id)?.name).filter(Boolean).join(', '));
+      sd = exp.splitWith.map(id => { const p=state.people.find(pp=>pp.id===id); return p?pName(p):''; }).filter(Boolean).join(', ');
     }
     const isEditing = editingId === exp.id;
     const isPending = exp.id < 0; // temp ID = still saving
@@ -937,6 +973,10 @@ function updateCardDetailPayments(pid, payments, mode) {
 
 function goSettle() {
   if(!state.expenses.length) { alert('Add at least one expense first.'); return; }
+  // Remove ?p=e from URL so refresh comes back to settle page
+  if(state.shortCode && window.location.search) {
+    history.replaceState(null, '', window.location.origin + '/t/' + state.shortCode);
+  }
   const balances = {};
   state.people.forEach(p => { balances[p.id] = 0; });
   state.expenses.forEach(exp => {
@@ -949,7 +989,7 @@ function goSettle() {
   paymentMode = 'simplified';
   renderSettleStep(balances);
   goStep(3);
-  if(state.myPersonId === null && state.people.length > 0) setTimeout(showIdentityPicker, 350);
+  // Identity picker is shown on load for new joiners — no need to prompt again here
 }
 
 function simplifyDebts(balances) {
@@ -972,6 +1012,9 @@ function simplifyDebts(balances) {
 
 function renderSettleStep(balances) {
   document.getElementById('settle-tab-name').textContent = state.tabName || 'Your Tab';
+  // Also keep step 2 nameplate in sync in case user goes back
+  const step2name = document.getElementById('step2-tab-name');
+  if(step2name) step2name.textContent = state.tabName || 'Your Tab';
   document.getElementById('confetti').innerHTML = ['🎉','✨','🙌','💸','🤝'].map(e=>`<span>${e}</span>`).join('');
   const total = state.expenses.reduce((s,e) => s+e.amount, 0);
   document.getElementById('summary-bar').innerHTML = `
@@ -1068,35 +1111,114 @@ function markDone(i) { const el = document.getElementById('done-'+i); el.classLi
 
 // ─── IDENTITY ────────────────────────────────────────────
 function isMe(pid) { return state.myPersonId !== null && pid === state.myPersonId; }
+// Returns "You" when pid is the current user, otherwise the person's escaped name
+function pName(p) { return isMe(p.id) ? 'You' : escHtml(p.name); }
+// Initials for "You" stay as the person's real initials (avatar still makes sense)
 
+// Navigate to the right page after identity is set (respects ?p= param)
+function _navigateAfterIdentity() {
+  const urlParams = new URLSearchParams(window.location.search);
+  if(urlParams.get('p') === 'e') goStep(2);
+  else goSettle();
+}
+
+// Full-screen identity picker — used both when creator first reaches expenses
+// and when someone joins via share link.
+// isJoin=true shows "add yourself" option; isJoin=false (creator) shows people they added.
+function showIdentityPickerForJoin(isCreator = false) {
+  const el = document.getElementById('identity-picker');
+  if(isCreator) {
+    el.querySelector('.identity-picker-title').textContent = 'Which one is you?';
+    el.querySelector('.identity-picker-sub').textContent = 'Pick your name from the people you added.';
+  } else {
+    el.querySelector('.identity-picker-title').textContent = 'Who are you?';
+    el.querySelector('.identity-picker-sub').textContent = 'Pick your name or add yourself to the tab.';
+  }
+  _renderIdentityList(!isCreator);
+  el.className = 'db-overlay';
+}
+
+// Identity picker when switching identity (from header chip)
 function showIdentityPicker() {
-  document.getElementById('identity-people-list').innerHTML = state.people.map((p,i) =>
-    `<button class="identity-btn" onclick="setMyIdentity(${p.id})">
+  const el = document.getElementById('identity-picker');
+  el.querySelector('.identity-picker-title').textContent = 'Switch identity';
+  el.querySelector('.identity-picker-sub').textContent = 'Who are you on this tab?';
+  _renderIdentityList(false);
+  el.className = 'db-overlay';
+}
+
+let _identityPickerNavigates = false; // true when picker should navigate after pick
+
+function _renderIdentityList(isJoin) {
+  _identityPickerNavigates = isJoin;
+  const list = document.getElementById('identity-people-list');
+  list.innerHTML = state.people.map((p,i) =>
+    `<button class="identity-btn${isMe(p.id) ? ' identity-btn-active' : ''}" onclick="setMyIdentity(${p.id})">
       <div class="person-avatar ${avatarClass(i)}" style="width:38px;height:38px;font-size:15px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;">${initials(p.name)}</div>
-      <div>${escHtml(p.name)}</div>
+      <div style="flex:1;text-align:left;">${pName(p)}</div>
+      ${isMe(p.id) ? '<span style="font-size:11px;color:var(--accent);font-weight:600;">current</span>' : ''}
     </button>`
   ).join('');
-  document.getElementById('identity-picker').className = 'db-overlay';
+
+  // Add "I'm not listed" option for joiners
+  if(isJoin) {
+    list.innerHTML += `
+      <div style="margin-top:8px;padding-top:12px;border-top:1px solid var(--border);">
+        <div class="form-label" style="margin-bottom:6px;text-align:left;">Not listed? Add yourself</div>
+        <div style="display:flex;gap:8px;">
+          <input id="identity-new-name" type="text" placeholder="Your name" maxlength="30" autocomplete="off"
+            onkeydown="if(event.key==='Enter') addSelfToTab()"
+            style="flex:1;padding:10px 12px;font-size:15px;">
+          <button class="btn btn-primary" onclick="addSelfToTab()" style="padding:10px 16px;">Join</button>
+        </div>
+      </div>`;
+  }
+}
+
+async function addSelfToTab() {
+  const inp = document.getElementById('identity-new-name');
+  if(!inp) return;
+  const name = inp.value.trim();
+  if(!name) return;
+  if(state.people.find(p => p.name.toLowerCase() === name.toLowerCase())) {
+    inp.style.borderColor = 'var(--red)';
+    setTimeout(() => inp.style.borderColor = '', 1500);
+    return;
+  }
+  const newPerson = {id: personIdSeq++, name};
+  state.people.push(newPerson);
+  renderPeopleList();
+  if(db && state.tabId) await syncTabMeta();
+  _identityPickerNavigates = true;
+  setMyIdentity(newPerson.id);
 }
 
 function setMyIdentity(id) {
+  const shouldNavigate = _identityPickerNavigates;
+  _identityPickerNavigates = false;
   state.myPersonId = id;
   document.getElementById('identity-picker').className = 'db-overlay hidden';
   if(id !== null && state.tabId) localStorage.setItem('su-identity-'+state.tabId, id);
   updateIdentityChip();
-  document.querySelectorAll('[id^="idme-"]').forEach(b => b.classList.remove('selected-payer'));
-  if(id !== null) document.getElementById('idme-'+id)?.classList.add('selected-payer');
+  // Re-render expense buttons if on step 2 (so "You" appears immediately)
+  if(document.getElementById('step-2').classList.contains('active')) {
+    renderPaidByBtns();
+    renderPersonalForBtns();
+    renderCustomAmountRows();
+    renderExpenseList();
+  }
   // Re-render settle if visible
   if(document.getElementById('step-3').classList.contains('active')) {
     const balances = {};
     state.people.forEach(p => { balances[p.id] = 0; });
     state.expenses.forEach(exp => {
       balances[exp.paidBy] += exp.amount;
-      if(exp.splitAmounts) exp.splitWith.forEach(id => { balances[id] -= (exp.splitAmounts[id]||0); });
-      else { const s = exp.amount/exp.splitWith.length; exp.splitWith.forEach(id => { balances[id] -= s; }); }
+      if(exp.splitAmounts) exp.splitWith.forEach(id2 => { balances[id2] -= (exp.splitAmounts[id2]||0); });
+      else { const s = exp.amount/exp.splitWith.length; exp.splitWith.forEach(id2 => { balances[id2] -= s; }); }
     });
     renderSettleStep(balances);
   }
+  if(shouldNavigate) _navigateAfterIdentity();
 }
 
 function updateIdentityChip() {
@@ -1181,7 +1303,7 @@ async function loadTabFromSupabase(code) {
   showDbOverlay('Loading tab…');
   try {
     const {data:tab, error:tabErr} = await db.from('tabs').select('*').eq('short_code', code).single();
-    if(tabErr || !tab) { showDbOverlay('Tab not found.', true); return; }
+    if(tabErr || !tab) { showDbOverlay(tabErr ? `Error: ${tabErr.message}` : 'Tab not found — the link may be expired.', true); return; }
 
     const {data:exps, error:expErr} = await db.from('expenses').select('*').eq('tab_id', tab.id).order('id');
     if(expErr) throw expErr;
@@ -1194,28 +1316,30 @@ async function loadTabFromSupabase(code) {
     state.currentSplitType = 'even';
     personIdSeq = tab.person_id_seq;
 
+    // Restore identity FIRST so pName() works correctly when rendering buttons/lists
     const savedId = localStorage.getItem('su-identity-'+tab.id);
-    if(savedId !== null) { state.myPersonId = parseInt(savedId); updateIdentityChip(); }
+    if(savedId !== null) {
+      state.myPersonId = parseInt(savedId);
+    }
 
     document.getElementById('tab-name').value = state.tabName;
     renderPeopleList();
     renderExpenseStep();
-
-    // Check URL search param to decide landing page
-    // Use ?page= param to avoid conflict with hash-based state encoding
-    const urlParams = new URLSearchParams(window.location.search);
-    const page = urlParams.get('p');
-    if(page === 'e') {
-      goStep(2);
-    } else {
-      goSettle();
-    }
-
     subscribeToTab(tab.id);
     hideDbOverlay();
+
+    // Now identity is set — update chip and navigate
+    if(state.myPersonId !== null) {
+      updateIdentityChip();
+      _navigateAfterIdentity();
+    } else {
+      // New joiner — show identity picker first, then navigate
+      showIdentityPickerForJoin();
+    }
   } catch(err) {
     console.error('loadTabFromSupabase:', err);
-    showDbOverlay('Could not load this tab. Check your connection.', true);
+    const msg = err?.message || err?.code || JSON.stringify(err) || 'Unknown error';
+    showDbOverlay(`Could not load this tab: ${msg}`, true);
   }
 }
 
