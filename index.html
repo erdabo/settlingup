@@ -375,9 +375,14 @@ select option { background:var(--bg2);color:var(--text); }
 .saving-chip.error { color:var(--red); }
 
 /* ── DEMO CARDS ── */
-.demo-cards-section { margin-top:20px; }
-.demo-cards-label { font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);font-weight:600;margin-bottom:10px; }
-.demo-card-list { display:flex;flex-direction:column;gap:8px; }
+.demo-cards-section { margin-top:16px; }
+.demo-cards-toggle { display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 0;-webkit-tap-highlight-color:transparent;user-select:none; }
+.demo-cards-toggle-label { font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);font-weight:600;flex:1; }
+.demo-cards-toggle-chevron { font-size:10px;color:var(--text3);transition:transform 0.22s; }
+.demo-cards-section.open .demo-cards-toggle-chevron { transform:rotate(180deg); }
+.demo-cards-list-wrap { display:none; }
+.demo-cards-section.open .demo-cards-list-wrap { display:block;animation:fadeUp 0.2s ease both; }
+.demo-card-list { display:flex;flex-direction:column;gap:8px;padding-top:8px; }
 .demo-card {
   display:flex;align-items:center;gap:12px;
   background:var(--surface);border:1px solid var(--border);border-radius:12px;
@@ -455,11 +460,6 @@ select option { background:var(--bg2);color:var(--text); }
     <div class="btn-row">
       <button class="btn btn-primary btn-full" onclick="goStep(1)">Add people →</button>
     </div>
-    <!-- demo cards -->
-    <div class="demo-cards-section" id="demo-cards-section" style="display:none;">
-      <div class="demo-cards-label">Try a demo</div>
-      <div class="demo-card-list" id="demo-card-list"></div>
-    </div>
     <!-- recent tabs + find a tab -->
     <div class="recent-tabs-section" id="recent-tabs-section">
       <div id="recent-list-wrap" style="display:none;">
@@ -474,6 +474,16 @@ select option { background:var(--bg2);color:var(--text); }
           <button class="find-tab-btn" onclick="openTabByCode()">Open →</button>
         </div>
         <div id="find-tab-error" style="font-size:12px;color:var(--red);margin-top:6px;display:none;"></div>
+      </div>
+    </div>
+    <!-- demo cards — collapsible, default collapsed -->
+    <div class="demo-cards-section" id="demo-cards-section" style="display:none;">
+      <div class="demo-cards-toggle" onclick="toggleDemoCards()">
+        <span class="demo-cards-toggle-label">Try a demo</span>
+        <span class="demo-cards-toggle-chevron">▼</span>
+      </div>
+      <div class="demo-cards-list-wrap">
+        <div class="demo-card-list" id="demo-card-list"></div>
       </div>
     </div>
   </div>
@@ -1856,11 +1866,27 @@ function loadRecentTabs() {
   catch { return []; }
 }
 
+// Auto-pick a tab icon from the name — emoji if the name starts with one,
+// otherwise pick from a palette based on a simple hash.
+const TAB_ICON_PALETTE = ['🏖️','🎉','✈️','🍕','⛺','🎸','🏔️','🚗','🎓','🏠','🌍','🎲','🍻','🎭','💼','🌮'];
+function pickTabIcon(tabName) {
+  if(!tabName) return '🧾';
+  // If name starts with DEMO: use 🎭
+  if(tabName.startsWith('DEMO: ')) return '🎭';
+  // Check if the first character is an emoji (code point > 127)
+  const first = [...tabName][0];
+  if(first && first.codePointAt(0) > 127) return first;
+  // Hash the name to pick consistently from palette
+  let h = 0;
+  for(let i = 0; i < tabName.length; i++) h = (h * 31 + tabName.charCodeAt(i)) & 0xffff;
+  return TAB_ICON_PALETTE[h % TAB_ICON_PALETTE.length];
+}
+
 function saveRecentTab(shortCode, tabName) {
   let tabs = loadRecentTabs();
   // Remove existing entry for this code so we can re-insert at top
   tabs = tabs.filter(t => t.code !== shortCode);
-  tabs.unshift({ code: shortCode, name: tabName, visited: Date.now() });
+  tabs.unshift({ code: shortCode, name: tabName, icon: pickTabIcon(tabName), visited: Date.now() });
   if(tabs.length > RECENT_TABS_MAX) tabs = tabs.slice(0, RECENT_TABS_MAX);
   try { localStorage.setItem(RECENT_TABS_KEY, JSON.stringify(tabs)); } catch(e) {}
 }
@@ -1880,9 +1906,8 @@ function renderRecentTabs() {
   wrap.style.display = '';
   list.innerHTML = tabs.map(t => {
     const ago = formatTimeAgo(t.visited);
-    const isDemo = t.name && t.name.startsWith('DEMO: ');
     return `<div class="recent-tab-item" style="padding-right:8px;">
-      <div class="recent-tab-icon" onclick="openTabByCode('${escHtml(t.code)}')" style="cursor:pointer;">${isDemo ? '🎭' : '🧾'}</div>
+      <div class="recent-tab-icon" onclick="openTabByCode('${escHtml(t.code)}')" style="cursor:pointer;">${t.icon || '🧾'}</div>
       <div class="recent-tab-info" onclick="openTabByCode('${escHtml(t.code)}')" style="cursor:pointer;">
         <div class="recent-tab-name">${escHtml(t.name)}</div>
         <div class="recent-tab-meta">${escHtml(t.code)} · ${ago}</div>
@@ -2084,12 +2109,18 @@ function updateDemoBanners() {
   [2, 3].forEach(s => { isDemo ? showDemoBanner(s) : hideDemoBanner(s); });
 }
 
+function toggleDemoCards() {
+  const section = document.getElementById('demo-cards-section');
+  if(section) section.classList.toggle('open');
+}
+
 function renderDemoCards() {
   const demos = window.SETTLINGUP_DEMOS;
   const section = document.getElementById('demo-cards-section');
   const list = document.getElementById('demo-card-list');
   if(!demos || !demos.length) { if(section) section.style.display = 'none'; return; }
   if(section) section.style.display = '';
+  // Default collapsed — do not add 'open' class here
   list.innerHTML = demos.map((d, i) =>
     `<div class="demo-card" onclick="loadDemo(${i})">
       <div class="demo-card-icon" style="background:${d.color||'var(--accent-bg)'};">${d.icon||'🧾'}</div>
