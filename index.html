@@ -1079,12 +1079,12 @@ function loadDemo(){
   renderPeopleList();renderExpenseStep();goStep(2);
 }
 window.addEventListener('load', async ()=>{
-  if(window.SETTLEUP_DEMO) document.getElementById('demo-btn').style.display='';
+  if(window.SETTLINGUP_DEMO) document.getElementById('demo-btn').style.display='';
   await loadFromUrl();
 });
 </script>
 
-<script src="settleup-demo.js" onerror="console.log('No demo file — thats fine.')"></script>
+<script src="settlingup-demo.js" onerror="console.log('No demo file — thats fine.')"></script>
 
 </body>
 </html>
