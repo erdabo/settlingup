@@ -30,6 +30,7 @@
 <!-- iMessage / iOS -->
 <meta name="description" content="Track shared expenses and settle up fairly. See exactly who owes what, with smart payment suggestions.">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script defer src="/_vercel/insights/script.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -687,6 +688,11 @@ select option { background:var(--bg2);color:var(--text); }
 <div id="toast" class="toast"></div>
 
 <script>
+// ─── ANALYTICS ──────────────────────────────────────────
+function track(name, props) {
+  try { window.va?.('event', { name, ...props }); } catch(e) {}
+}
+
 // ─── THEME ───────────────────────────────────────────────
 let currentTheme = localStorage.getItem('su-theme') || 'dark';
 function applyTheme(t) {
@@ -1009,6 +1015,7 @@ async function addExpense() {
     clearExpenseForm();
     renderExpenseList();
 
+    track('expense_added', { split_type: state.currentSplitType });
     if(db && state.tabId) {
       _pendingLocalIds.add(tempId);
       const realId = await saveExpenseToSupabase(newExp);
@@ -1188,6 +1195,7 @@ async function markDone(chipEl, pay) {
     chipEl.classList.remove('saving');
     if(newRow) {
       _markedPayments.push(newRow);
+      track('payment_marked');
       refreshSettlePage();
     } else {
       chipEl.textContent = 'Paid ✓';
@@ -1721,8 +1729,8 @@ async function createTab() {
   localStorage.setItem('su-owner-'+shortCode, ownerToken);
   state.tabId = data.id;
   state.shortCode = shortCode;
-  // NEW: save to recent tabs
   saveRecentTab(shortCode, state.tabName);
+  track('tab_created');
   history.pushState({}, '', '/t/'+shortCode);
 }
 
@@ -1755,9 +1763,9 @@ async function loadTabFromSupabase(code) {
     subscribeToTab(tab.id);
     hideDbOverlay();
 
-    // update recent tabs entry
     saveRecentTab(code, state.tabName);
     updateDemoBanners();
+    track('tab_loaded', { is_demo: isDemoTab(state.tabName) });
 
     if(state.myPersonId !== null) {
       updateIdentityChip();
@@ -2118,6 +2126,7 @@ async function shareTab(btn) {
   if(state.shortCode) {
     const url = window.location.origin + '/t/' + state.shortCode + pageSuffix;
     try { await navigator.clipboard.writeText(url); } catch(e) { fallbackCopy(url); }
+    track('tab_shared');
     showCopied(btn);
     return;
   }
@@ -2129,6 +2138,7 @@ async function shareTab(btn) {
       await createTab();
       const url = window.location.origin + '/t/' + state.shortCode + pageSuffix;
       try { await navigator.clipboard.writeText(url); } catch(e) { fallbackCopy(url); }
+      track('tab_shared');
       showCopied(btn);
     } catch(err) {
       console.warn('Could not save tab before sharing:', err);
@@ -2294,6 +2304,7 @@ async function loadDemo(index) {
   renderPeopleList();
   renderExpenseStep();
   updateDemoBanners();
+  track('demo_loaded', { demo: d.title });
   goSettle();
 }
 
