@@ -374,6 +374,33 @@ select option { background:var(--bg2);color:var(--text); }
 .saving-chip.saved { color:var(--green); }
 .saving-chip.error { color:var(--red); }
 
+/* ── DEMO CARDS ── */
+.demo-cards-section { margin-top:20px; }
+.demo-cards-label { font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);font-weight:600;margin-bottom:10px; }
+.demo-card-list { display:flex;flex-direction:column;gap:8px; }
+.demo-card {
+  display:flex;align-items:center;gap:12px;
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:12px 14px;cursor:pointer;transition:all 0.15s;
+  -webkit-tap-highlight-color:transparent;
+}
+.demo-card:hover { border-color:var(--accent);background:var(--accent-bg); }
+.demo-card-icon { width:36px;height:36px;border-radius:9px;display:grid;place-items:center;font-size:18px;flex-shrink:0; }
+.demo-card-info { flex:1;min-width:0; }
+.demo-card-name { font-weight:600;font-size:14px; }
+.demo-card-meta { font-size:11px;color:var(--text3);margin-top:2px; }
+.demo-card-arrow { color:var(--text3);font-size:14px;flex-shrink:0; }
+/* demo banner on settle/expense pages */
+.demo-banner { display:flex;align-items:center;gap:10px;padding:9px 13px;background:rgba(224,122,58,0.10);border:1px solid rgba(224,122,58,0.25);border-radius:10px;margin-bottom:12px;font-size:12px;color:#e07a3a;font-weight:500;line-height:1.4; }
+.demo-banner-text { flex:1; }
+.demo-banner-close { background:transparent;border:none;color:#e07a3a;font-size:16px;cursor:pointer;padding:0;line-height:1;opacity:0.7;-webkit-tap-highlight-color:transparent; }
+.demo-banner-close:hover { opacity:1; }
+/* recent tab remove button */
+.recent-tab-remove { width:24px;height:24px;border-radius:6px;border:none;background:transparent;color:var(--text3);font-size:14px;cursor:pointer;display:grid;place-items:center;flex-shrink:0;transition:all 0.15s;-webkit-tap-highlight-color:transparent;line-height:1; }
+.recent-tab-remove:hover { background:var(--red-bg);color:var(--red); }
+
+
+
 /* ── NEW: RECENT TABS (step 0) ── */
 .recent-tabs-section { margin-top:20px; }
 .recent-tabs-label { font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);font-weight:600;margin-bottom:10px; }
@@ -428,8 +455,10 @@ select option { background:var(--bg2);color:var(--text); }
     <div class="btn-row">
       <button class="btn btn-primary btn-full" onclick="goStep(1)">Add people →</button>
     </div>
-    <div style="text-align:center;margin-top:10px;">
-      <button class="btn btn-ghost" onclick="loadDemo()" id="demo-btn" style="display:none;font-size:13px;padding:8px 14px;">Try a demo</button>
+    <!-- demo cards -->
+    <div class="demo-cards-section" id="demo-cards-section" style="display:none;">
+      <div class="demo-cards-label">Try a demo</div>
+      <div class="demo-card-list" id="demo-card-list"></div>
     </div>
     <!-- recent tabs + find a tab -->
     <div class="recent-tabs-section" id="recent-tabs-section">
@@ -475,6 +504,10 @@ select option { background:var(--bg2);color:var(--text); }
     <div class="tab-nameplate" id="step2-nameplate">
       <div class="tab-nameplate-name" id="step2-tab-name"></div>
       <div class="tab-nameplate-label">Add expenses</div>
+    </div>
+    <div id="demo-banner-2" style="display:none;" class="demo-banner">
+      <span class="demo-banner-text">🎭 This is a demo tab — edit freely, or load a fresh one anytime from the home screen.</span>
+      <button class="demo-banner-close" onclick="dismissDemoBanner(2)">✕</button>
     </div>
     <div id="expense-list-wrap"></div>
     <div id="edit-mode-banner" style="display:none" class="edit-mode-banner">
@@ -542,6 +575,10 @@ select option { background:var(--bg2);color:var(--text); }
     </div>
     <div class="summary-bar" id="summary-bar"></div>
     <div id="validation-banner"></div>
+    <div id="demo-banner-3" style="display:none;" class="demo-banner">
+      <span class="demo-banner-text">🎭 This is a demo tab — edit freely, or load a fresh one anytime from the home screen.</span>
+      <button class="demo-banner-close" onclick="dismissDemoBanner(3)">✕</button>
+    </div>
     <div class="person-cards" id="person-cards"></div>
     <div class="payments-row">
       <div class="payments-title">Who pays who <span class="pill" id="payment-count">0</span></div>
@@ -1400,6 +1437,8 @@ function renderPaymentsList(payments) {
 
 function toggleCard(id) { document.getElementById('pcard-'+id).classList.toggle('expanded'); }
 
+
+
 // ─── IDENTITY ────────────────────────────────────────────
 function isMe(pid) { return state.myPersonId !== null && pid === state.myPersonId; }
 function pName(p) { return isMe(p.id) ? 'You' : escHtml(p.name); }
@@ -1660,8 +1699,9 @@ async function loadTabFromSupabase(code) {
     subscribeToTab(tab.id);
     hideDbOverlay();
 
-    // NEW: update recent tabs entry
+    // update recent tabs entry
     saveRecentTab(code, state.tabName);
+    updateDemoBanners();
 
     if(state.myPersonId !== null) {
       updateIdentityChip();
@@ -1825,6 +1865,13 @@ function saveRecentTab(shortCode, tabName) {
   try { localStorage.setItem(RECENT_TABS_KEY, JSON.stringify(tabs)); } catch(e) {}
 }
 
+function removeRecentTab(code) {
+  let tabs = loadRecentTabs();
+  tabs = tabs.filter(t => t.code !== code);
+  try { localStorage.setItem(RECENT_TABS_KEY, JSON.stringify(tabs)); } catch(e) {}
+  renderRecentTabs();
+}
+
 function renderRecentTabs() {
   const tabs = loadRecentTabs();
   const wrap = document.getElementById('recent-list-wrap');
@@ -1833,13 +1880,14 @@ function renderRecentTabs() {
   wrap.style.display = '';
   list.innerHTML = tabs.map(t => {
     const ago = formatTimeAgo(t.visited);
-    return `<div class="recent-tab-item" onclick="openTabByCode('${escHtml(t.code)}')">
-      <div class="recent-tab-icon">🧾</div>
-      <div class="recent-tab-info">
+    const isDemo = t.name && t.name.startsWith('DEMO: ');
+    return `<div class="recent-tab-item" style="padding-right:8px;">
+      <div class="recent-tab-icon" onclick="openTabByCode('${escHtml(t.code)}')" style="cursor:pointer;">${isDemo ? '🎭' : '🧾'}</div>
+      <div class="recent-tab-info" onclick="openTabByCode('${escHtml(t.code)}')" style="cursor:pointer;">
         <div class="recent-tab-name">${escHtml(t.name)}</div>
         <div class="recent-tab-meta">${escHtml(t.code)} · ${ago}</div>
       </div>
-      <div class="recent-tab-arrow">›</div>
+      <button class="recent-tab-remove" onclick="removeRecentTab('${escHtml(t.code)}')" title="Remove from recents">✕</button>
     </div>`;
   }).join('');
 }
@@ -2012,16 +2060,87 @@ async function loadFromHashUrl() {
 }
 
 // ─── DEMO ────────────────────────────────────────────────
-function loadDemo() {
-  if(!window.SETTLINGUP_DEMO) { alert('No demo file found.'); return; }
-  const d = window.SETTLINGUP_DEMO;
+// Demo short codes are prefixed "DEMO:" in the tab name — that's the only marker.
+const DEMO_PREFIX = 'DEMO: ';
+
+function isDemoTab(tabName) {
+  return tabName && tabName.startsWith(DEMO_PREFIX);
+}
+
+function showDemoBanner(step) {
+  const el = document.getElementById('demo-banner-' + step);
+  if(el) el.style.display = '';
+}
+function hideDemoBanner(step) {
+  const el = document.getElementById('demo-banner-' + step);
+  if(el) el.style.display = 'none';
+}
+function dismissDemoBanner(step) {
+  hideDemoBanner(step);
+}
+
+function updateDemoBanners() {
+  const isDemo = isDemoTab(state.tabName);
+  [2, 3].forEach(s => { isDemo ? showDemoBanner(s) : hideDemoBanner(s); });
+}
+
+function renderDemoCards() {
+  const demos = window.SETTLINGUP_DEMOS;
+  const section = document.getElementById('demo-cards-section');
+  const list = document.getElementById('demo-card-list');
+  if(!demos || !demos.length) { if(section) section.style.display = 'none'; return; }
+  if(section) section.style.display = '';
+  list.innerHTML = demos.map((d, i) =>
+    `<div class="demo-card" onclick="loadDemo(${i})">
+      <div class="demo-card-icon" style="background:${d.color||'var(--accent-bg)'};">${d.icon||'🧾'}</div>
+      <div class="demo-card-info">
+        <div class="demo-card-name">${escHtml(d.title)}</div>
+        <div class="demo-card-meta">${d.people.length} people · ${d.expenses.length} expenses</div>
+      </div>
+      <div class="demo-card-arrow">›</div>
+    </div>`
+  ).join('');
+}
+
+async function loadDemo(index) {
+  const demos = window.SETTLINGUP_DEMOS;
+  if(!demos || !demos[index]) { alert('Demo not found.'); return; }
+  const d = demos[index];
+
+  // Reset state
+  if(realtimeChannel) { realtimeChannel.unsubscribe(); realtimeChannel = null; }
+  _markedPayments = [];
   state = {tabName:'', people:[], expenses:[], currentSplitType:'even', tabId:null, shortCode:null, myPersonId:null};
-  state.tabName = d.tabName;
-  document.getElementById('tab-name').value = d.tabName;
+
+  state.tabName = DEMO_PREFIX + d.title;
+  document.getElementById('tab-name').value = state.tabName;
   state.people = d.people.map(p => ({...p}));
   personIdSeq = Math.max(...d.people.map(p => p.id)) + 1;
   state.expenses = d.expenses.map(e => ({...e, splitAmounts: e.splitAmounts ? {...e.splitAmounts} : null}));
-  renderPeopleList(); renderExpenseStep(); goStep(2);
+
+  // If Supabase is available, save as a real tab so it gets a shareable URL
+  if(db) {
+    try {
+      await createTab();
+      subscribeToTab(state.tabId);
+      document.getElementById('conn-dot').style.display = '';
+      // Save expenses to DB
+      for(const exp of state.expenses) {
+        const tempId = exp.id;
+        _pendingLocalIds.add(tempId);
+        const realId = await saveExpenseToSupabase(exp);
+        _pendingLocalIds.delete(tempId);
+        if(realId !== null) exp.id = realId;
+      }
+    } catch(err) {
+      console.warn('Could not save demo to Supabase:', err);
+    }
+  }
+
+  renderPeopleList();
+  renderExpenseStep();
+  updateDemoBanners();
+  goSettle();
 }
 
 // ─── INIT ────────────────────────────────────────────────
@@ -2036,9 +2155,8 @@ window.addEventListener('load', async () => {
     return;
   }
 
-  if(window.SETTLINGUP_DEMO) document.getElementById('demo-btn').style.display = '';
-
-  // NEW: render recent tabs on home screen
+  // Render demo cards and recent tabs on home screen
+  renderDemoCards();
   renderRecentTabs();
 
   await loadFromHashUrl();
@@ -2047,6 +2165,6 @@ window.addEventListener('load', async () => {
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="/supabase-config.js" onerror="console.log('No Supabase config — running in local mode.')"></script>
-<script src="/settlingup-demo.js" onerror="console.log('No demo file.')"></script>
+<script src="/settlingup-demos.js" onerror="console.log('No demos file.')"></script>
 </body>
 </html>
