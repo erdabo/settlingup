@@ -1,0 +1,305 @@
+# SettlingUp — Product Backlog
+
+> Maintained by the agent. Owner reviews and re-prioritizes on demand.
+> Format: each item has a status, size estimate, and enough context to execute without
+> asking basic questions. Items marked NEEDS-DECISION require owner input before starting.
+
+---
+
+## Status Legend
+
+- `[ ]` — not started
+- `[~]` — in progress (include branch name)
+- `[x]` — done (include PR or commit)
+- `[?]` — blocked / needs owner decision
+- `[-]` — won't do / deprioritized
+
+---
+
+## 🔴 P1 — Do These First
+
+These are bugs or correctness issues affecting real users right now.
+
+### [ ] Penny rounding — whole-cent splits everywhere
+**Size:** M (half day)
+**Why:** The current math can produce per-person amounts that don't sum exactly to the
+total. This is a trust issue — if the numbers don't add up to the cent, users notice.
+**What to do:**
+- Add a `splitEvenly(total, n)` helper that works in integer cents and distributes
+  remainder pennies to the first N people (largest-remainder method)
+- Replace all `Math.round(x * 100) / 100` split calculations with this helper
+- For custom splits with tax/tip: after proportional distribution, find the 1-cent
+  discrepancy (if any) and add it to the person with the largest fractional remainder
+- In `simplifyDebts()` and `computeDirectPayments()`: normalise all balances to nearest
+  cent before processing; round each payment amount before pushing
+- Guard against negative amounts in `addExpense()`: reject if amount <= 0
+
+### [ ] markDone() uses list index, not stable payment identity
+**Size:** S (1-2 hours)
+**Why:** When user toggles Smart ↔ Direct payment mode, the list re-renders and marks
+shift to wrong payments. This is a data integrity bug.
+**What to do:**
+- Replace `markDone(i)` index with `markDone('from-to')` key (e.g. `'2-0'`)
+- Change done-chip id to `done-${pay.from}-${pay.to}`
+- Maintain a `_markedKeys = new Set()` that survives re-renders
+- On render, restore `.marked` class from the set
+
+### [ ] editExpense() leaves top amount field blank
+**Size:** S (30 mins)
+**Why:** When editing any existing expense, the top amount input shows blank. Confusing.
+**What to do:**
+- At end of `editExpense(id)`, after `setSplitType()`:
+  `document.getElementById('exp-amount-top').value = exp.amount.toFixed(2)`
+- Also fix `cancelEdit()` to clear the top amount field
+
+### [ ] goHome() silently destroys unsaved local-mode data
+**Size:** S (30 mins)
+**Why:** Clicking the logo when in local mode (no Supabase tab saved yet) loses all work.
+**What to do:**
+- In `goHome()`: if not on step 0 AND `state.people.length > 0` AND `!state.tabId`,
+  show a confirm dialog before navigating
+
+### [ ] Realtime INSERT race: _pendingLocalIds never checked
+**Size:** S (30 mins)
+**Why:** Can produce brief duplicate expense cards when saving on a slow connection.
+**What to do:**
+- In the INSERT realtime handler: add `if (_pendingLocalIds.size > 0) return;` before
+  the existing duplicate-ID check
+
+---
+
+## 🟡 P2 — High Value, Ship Soon
+
+### [ ] Replace alert() with inline form errors
+**Size:** M
+**Why:** alert() is jarring on mobile. Every validation failure pops a native dialog.
+**What to do:**
+- Add `div#expense-form-error` below the "+ Add expense" button, hidden by default
+- Style: `font-size:12px; color:var(--red); margin-top:8px; text-align:center;`
+- Replace all `alert()` in `addExpense()` with `showFormError('message')`
+- Flash red border on the specific missing field
+- Auto-clear after 4 seconds or on next interaction
+
+### [ ] Keyboard Enter submits expense form
+**Size:** S
+**Why:** Desktop users fill the form with keyboard and must mouse-click to submit.
+**What to do:**
+- Add `onkeydown="if(event.key==='Enter') addExpense()"` to:
+  `#exp-desc`, `#exp-amount-top`, `#exp-amount-personal`, `#exp-tax`, `#exp-tip`
+
+### [ ] "You" card accent border + badge on settle page
+**Size:** S
+**Why:** Your card is first in the list but looks identical to everyone else's. The most
+important card should be visually distinct.
+**What to do:**
+- `.person-card.you-card { border-color: var(--accent); }`
+- Add `<span class="you-badge">You</span>` next to name in card header
+- `.you-badge { font-size:10px; background:var(--accent-bg); color:var(--accent);
+  padding:2px 7px; border-radius:99px; font-weight:700; margin-left:6px;
+  text-transform:uppercase; letter-spacing:0.5px; }`
+
+### [ ] "New tab" button danger styling
+**Size:** XS
+**Why:** Sits next to "← Edit expenses" with identical styling. Misclick destroys work.
+**What to do:**
+- Add class `btn-new-tab` to the button
+- `.btn-ghost.btn-new-tab:hover { color: var(--red); }`
+- Already has ⚠ prefix from prior work — keep it
+
+### [ ] Home screen value prop for first-time visitors
+**Size:** S
+**Why:** First-time visitors see "Name your tab / What's the occasion?" with zero context.
+**What to do:**
+- Add above `.section-title` on step 0, only when `su-recent-tabs` is empty in
+  localStorage:
+  ```html
+  <div class="hero-tagline">
+    Split any expense. Settle up fairly.<br>
+    <span>No sign-up. No app. Just share a link.</span>
+  </div>
+  ```
+- Style: centered, large-ish font, muted subtext, fades in with the step animation
+- Hide it once the user has any recent tabs (returning users don't need it)
+
+### [ ] Person removal confirmation shows amounts
+**Size:** XS
+**Why:** Confirm dialog lists expense names but not amounts. Users can't judge what they're losing.
+**What to do:**
+- Change the affected expenses list to: `• ${e.desc} (${fmt(e.amount)})`
+
+### [ ] Sub-dollar balance treatment
+**Size:** S
+**Why:** "Chris owes $0.82" creates real-world awkwardness. Tiny residuals should be
+visually softened.
+**What to do:**
+- In person card rendering: if `Math.abs(bal) < 1.00` and `bal !== 0`, add class
+  `is-micro` to the card
+- `.person-card.is-micro { opacity: 0.65; }`
+- Change verdict text to "basically settled ($0.82)" in muted color
+
+### [ ] PWA manifest — move from data URI to real file
+**Size:** S
+**Why:** Chrome on Android won't show "Add to Home Screen" for data URI manifests.
+**What to do:**
+- Decode the current base64 manifest content and save as `/manifest.json`
+- Change `<link rel="manifest">` to `href="/manifest.json"`
+- Verify icons are referenced correctly
+
+### [ ] Check og-image.png exists in repo root
+**Size:** XS
+**Why:** Meta tags reference `/og-image.png` — if missing, all share link previews
+show a broken image.
+**What to do:**
+- Check repo root for `og-image.png`
+- If missing: create a simple 1200×630 SVG/PNG with the SettlingUp logo on dark
+  background and save as `og-image.png`
+
+---
+
+## 🟢 P3 — Good Features, Schedule When P1+P2 Done
+
+### [ ] Venmo / Cash App deep links on payment cards
+**Size:** M
+**Why:** Users are about to open Venmo anyway. Pre-filling the amount is a genuine
+time-saver and a natural monetization hook.
+**What to do:**
+- Add a "Pay on Venmo" button to each payment card (only shown for the current user's
+  outgoing payments)
+- Venmo deep link: `venmo://paycharge?txn=pay&recipients=&amount=${pay.amount}&note=SettlingUp`
+- Cash App: `https://cash.app/$<tag>/${pay.amount}`
+- Store optional Venmo/CashApp handle in identity (localStorage per tab)
+- If no handle set: show button greyed with "Add your Venmo" tooltip
+- NEEDS-DECISION: Design of the handle input UX
+
+### [ ] Tip jar / "buy me a coffee" moment
+**Size:** S
+**Why:** Contextual ask at the highest-value moment — right after settling.
+**What to do:**
+- On first load of step 3 (settle page), if `su-tipped` not in localStorage, show a
+  dismissable card at the bottom of the payments list:
+  *"SettlingUp saved you the math 🧮 Buy the developer a coffee?"*
+  with $1 / $3 / $5 Stripe links and a "Maybe later" dismiss
+- Set `su-tipped=dismissed` on dismiss; `su-tipped=yes` on click
+- Never show again after either action
+- NEEDS-DECISION: Stripe account and payment links
+
+### [ ] Expense list search/filter
+**Size:** M
+**Why:** With 20+ expenses, finding one to edit is painful.
+**What to do:**
+- Show a search input above the expense list only when `state.expenses.length >= 8`
+- Filter in real time by description (case insensitive)
+- Clear button on the input
+- "No expenses match" empty state
+
+### [ ] Tab expiry warning
+**Size:** M
+**Why:** Tabs will be deleted after 90 days (future cron job). Users should know.
+**What to do:**
+- Add `last_accessed_at` column to tabs table (NEEDS-DECISION: schema change)
+- Update it on every tab load
+- On settle page: if tab is 80+ days old, show warning banner:
+  "This tab expires in X days — reshare the link to keep it active."
+
+### [ ] PDF / share export
+**Size:** L
+**Why:** Groups want to send a clean summary. High perceived value.
+**What to do:**
+- "Export summary" button on settle page
+- Generates a clean HTML print view: tab name, date, total, payment list, breakdown
+- "Powered by settlingup.app" footer
+- `window.print()` or jsPDF (CDN) — NEEDS-DECISION on approach
+- This is the Pro feature unlock candidate
+
+### [ ] Duplicate expense warning
+**Size:** S
+**Why:** Users adding expenses manually often accidentally duplicate them.
+**What to do:**
+- In `addExpense()`: before saving, check if any existing expense has the same
+  description (case insensitive) AND same amount
+- If match found: show inline warning (not blocking): "You already have a
+  '[desc]' for $X — is this a duplicate?" with "Add anyway" / "Cancel" buttons
+
+---
+
+## 🔵 P4 — Future / Needs More Thought
+
+### [ ] Payment notes when marking done
+Memo field ("Sent on Venmo") saved to payments table. Requires DB column addition.
+
+### [ ] Delete a tab
+Owner-only, uses localStorage token. Confirm dialog, cascade delete in Supabase.
+
+### [ ] Currency selector
+Tab-level USD/EUR/GBP/CAD/AUD/JPY picker. Store in tabs table. New column required.
+
+### [ ] Expense categories + breakdown chart
+Tag each expense (Food, Transport, etc.). Donut chart on settle page. Pro feature candidate.
+
+### [ ] Offline queue / retry
+Failed saves retry automatically. Local queue with persistent state.
+
+### [ ] Dynamic OG meta per tab
+Vercel edge function reads tab from Supabase, renders tab-specific og:title/description.
+
+### [ ] Tab summary read-only page
+`/t/<code>/summary` — clean read-only settle view for sending to non-participants.
+
+### [ ] Viewer mode
+Skip identity picker, browse tab without being a participant.
+
+### [ ] Service worker / PWA caching
+Cache current tab's data. Works offline.
+
+---
+
+## Analytics Queries to Run Weekly
+
+The agent should run these against Supabase and include results in the weekly brief:
+
+```sql
+-- New tabs this week
+SELECT COUNT(*) FROM tabs
+WHERE created_at > NOW() - INTERVAL '7 days';
+
+-- Total active tabs (accessed in last 30 days)
+SELECT COUNT(*) FROM tabs
+WHERE updated_at > NOW() - INTERVAL '30 days';
+
+-- Total expenses added this week
+SELECT COUNT(*) FROM expenses
+WHERE created_at > NOW() - INTERVAL '7 days';
+
+-- Average expenses per tab (active tabs)
+SELECT AVG(exp_count) FROM (
+  SELECT tab_id, COUNT(*) as exp_count FROM expenses
+  GROUP BY tab_id
+) sub;
+
+-- Split type breakdown
+SELECT split_type, COUNT(*) as n FROM expenses
+GROUP BY split_type ORDER BY n DESC;
+
+-- Tabs by people count (from jsonb array length)
+SELECT jsonb_array_length(people) as people_count, COUNT(*) as tabs
+FROM tabs GROUP BY people_count ORDER BY people_count;
+```
+
+---
+
+## How to Update This File
+
+When completing an item:
+1. Change `[ ]` to `[x]`
+2. Add the PR number or commit hash as a note
+3. Move it to a `## Done` section at the bottom (keep last 10, archive the rest)
+
+When adding a new item from analytics or user feedback:
+1. Add it in the right priority tier with full context
+2. Flag it in the weekly brief to the owner
+3. Don't start it until the owner acknowledges
+
+When re-prioritizing:
+1. Move items between tiers
+2. Note the reason for the change
+3. Message the owner with the proposed re-prioritization before acting on it
