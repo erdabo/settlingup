@@ -272,6 +272,7 @@ select option { background:var(--bg2);color:var(--text); }
 .person-card.is-zero { border-left:3px solid var(--text3); }
 /* NEW: fully settled via payments */
 .person-card.is-settled { border-left:3px solid var(--green); }
+.person-card.is-micro { opacity: 0.65; }
 .person-card.you-card { border-color: var(--accent); }
 .you-badge { font-size:10px;background:var(--accent-bg);color:var(--accent);padding:2px 7px;border-radius:99px;font-weight:700;margin-left:6px;text-transform:uppercase;letter-spacing:0.5px; }
 .person-card-header { display:flex;align-items:center;gap:10px;padding:13px 14px 10px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent; }
@@ -1644,6 +1645,8 @@ function renderSettleStep(balances) {
     const isFullySettledByPayments = isZero && Math.abs(rawBal) > 0.005;
     const cc = isPos ? 'is-pos' : isNeg ? 'is-neg' : 'is-zero';
     const vc = isPos ? 'pos' : isNeg ? 'neg' : 'zero';
+    // Sub-dollar residual — visually soften
+    const isMicro = !isZero && !isFullySettledByPayments && Math.abs(adjBal) < 1.00;
 
     // ── NEW: verdict and sentence reflect adjusted balance ──
     let verdict, sentence;
@@ -1663,14 +1666,26 @@ function renderSettleStep(balances) {
         sentence += ` <em style="color:var(--green)">(${fmt(paid_)} already paid)</em>`;
       }
     } else if(isNeg) {
-      verdict = itsMe ? `you owe ${fmt(Math.abs(adjBal))}` : `owes ${fmt(Math.abs(adjBal))}`;
-      sentence = itsMe
-        ? `You paid ${fmt(paid)}, your share was ${fmt(owed)} — you owe ${fmt(Math.abs(adjBal))}.`
-        : `${escHtml(p.name)} paid ${fmt(paid)}, their share was ${fmt(owed)} — they owe ${fmt(Math.abs(adjBal))}.`;
-      if(Math.abs(adjBal) < Math.abs(rawBal) - 0.005) {
-        const alreadyPaid = Math.round((Math.abs(rawBal) - Math.abs(adjBal))*100)/100;
-        sentence += ` <em style="color:var(--green)">(${fmt(alreadyPaid)} already paid)</em>`;
+      if(isMicro) {
+        verdict = itsMe ? `basically settled` : `basically settled`;
+        sentence = itsMe
+          ? `You're <span style="color:var(--text3)">${fmt(Math.abs(adjBal))} off</span> — close enough to call it even.`
+          : `${escHtml(p.name)} is <span style="color:var(--text3)">${fmt(Math.abs(adjBal))} off</span> — close enough to call it even.`;
+      } else {
+        verdict = itsMe ? `you owe ${fmt(Math.abs(adjBal))}` : `owes ${fmt(Math.abs(adjBal))}`;
+        sentence = itsMe
+          ? `You paid ${fmt(paid)}, your share was ${fmt(owed)} — you owe ${fmt(Math.abs(adjBal))}.`
+          : `${escHtml(p.name)} paid ${fmt(paid)}, their share was ${fmt(owed)} — they owe ${fmt(Math.abs(adjBal))}.`;
+        if(Math.abs(adjBal) < Math.abs(rawBal) - 0.005) {
+          const alreadyPaid = Math.round((Math.abs(rawBal) - Math.abs(adjBal))*100)/100;
+          sentence += ` <em style="color:var(--green)">(${fmt(alreadyPaid)} already paid)</em>`;
+        }
       }
+    } else if(isPos && isMicro) {
+      verdict = `basically settled`;
+      sentence = itsMe
+        ? `The group is <span style="color:var(--text3)">${fmt(adjBal)} off</span> — close enough to call it even.`
+        : `${escHtml(p.name)} is owed <span style="color:var(--text3)">${fmt(adjBal)}</span> — close enough to call it even.`;
     } else {
       verdict = 'settled ✓';
       sentence = itsMe ? `You paid exactly your share. All settled.` : `${escHtml(p.name)} paid exactly their share. All settled.`;
@@ -1686,7 +1701,7 @@ function renderSettleStep(balances) {
       return `<div class="detail-line"><span class="dl-desc">${escHtml(e.desc)}</span><span class="dl-note">${note}</span><span class="dl-amount" style="color:var(--red)">-${fmt(ms)}</span></div>`;
     }).join('');
 
-    return `<div class="person-card ${cc}${itsMe?' you-card':''}" id="pcard-${p.id}">
+    return `<div class="person-card ${cc}${isMicro?' is-micro':''}${itsMe?' you-card':''}" id="pcard-${p.id}">
       <div class="person-card-header" onclick="toggleCard(${p.id})">
         <div class="person-avatar ${avatarClass(i)}" style="width:32px;height:32px;font-size:13px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;">${initials(p.name)}</div>
         <div class="person-card-name">${itsMe?'You':escHtml(p.name)}${itsMe?'<span class="you-badge">You</span>':''}</div>
