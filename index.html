@@ -442,6 +442,58 @@ select option { background:var(--bg2);color:var(--text); }
 
 
 
+/* ── FEEDBACK BUTTON & MODAL ── */
+.feedback-fab {
+  position:fixed;bottom:20px;right:16px;z-index:200;
+  display:none;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:99px;padding:8px 14px;
+  font-size:13px;font-family:'Outfit',sans-serif;font-weight:600;
+  color:var(--text2);cursor:pointer;
+  box-shadow:0 2px 12px rgba(0,0,0,0.18);
+  transition:all 0.2s;
+  -webkit-tap-highlight-color:transparent;
+}
+.feedback-fab:hover { border-color:var(--border2);color:var(--text);background:var(--surfaceHov); }
+.feedback-fab.visible { display:inline-flex;align-items:center;gap:6px; }
+.feedback-overlay {
+  position:fixed;inset:0;background:rgba(0,0,0,0.5);
+  z-index:500;display:flex;align-items:flex-end;justify-content:center;
+  padding-bottom:0;
+  opacity:0;pointer-events:none;transition:opacity 0.2s;
+}
+.feedback-overlay.open { opacity:1;pointer-events:auto; }
+.feedback-sheet {
+  background:var(--bg2);border:1px solid var(--border2);
+  border-radius:20px 20px 0 0;padding:24px 20px 32px;
+  width:100%;max-width:480px;
+  transform:translateY(40px);transition:transform 0.25s ease;
+}
+.feedback-overlay.open .feedback-sheet { transform:translateY(0); }
+.feedback-sheet-title { font-size:18px;font-weight:700;margin-bottom:4px; }
+.feedback-sheet-sub { font-size:14px;color:var(--text2);margin-bottom:20px; }
+.feedback-thumbs { display:flex;gap:12px;margin-bottom:18px; }
+.feedback-thumb {
+  flex:1;padding:14px;border-radius:14px;border:2px solid var(--border);
+  background:var(--surface);font-size:26px;cursor:pointer;text-align:center;
+  transition:all 0.15s;-webkit-tap-highlight-color:transparent;
+}
+.feedback-thumb:hover { border-color:var(--border2);background:var(--surfaceHov); }
+.feedback-thumb.selected { border-color:var(--accent);background:var(--accent-bg); }
+.feedback-sheet textarea {
+  width:100%;min-height:80px;resize:vertical;
+  background:var(--input-bg);border:1px solid var(--border);
+  border-radius:10px;color:var(--text);font-family:'Outfit',sans-serif;
+  font-size:15px;padding:12px 14px;outline:none;
+  transition:border-color 0.2s;box-sizing:border-box;margin-bottom:16px;
+}
+.feedback-sheet textarea:focus { border-color:var(--accent); }
+.feedback-sheet textarea::placeholder { color:var(--text3); }
+.feedback-sheet-actions { display:flex;gap:10px; }
+.feedback-close-btn { position:absolute;top:16px;right:16px;background:none;border:none;font-size:20px;color:var(--text2);cursor:pointer;padding:4px 8px;border-radius:8px;line-height:1; }
+.feedback-close-btn:hover { background:var(--surfaceHov);color:var(--text); }
+.feedback-thanks { text-align:center;padding:16px 0;font-size:22px; }
+
 /* ── NEW: RECENT TABS (step 0) ── */
 .recent-tabs-section { margin-top:20px; }
 .recent-tabs-label { font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);font-weight:600;margin-bottom:10px; }
@@ -700,6 +752,30 @@ select option { background:var(--bg2);color:var(--text); }
 
 </div>
 
+<!-- Feedback FAB -->
+<button id="feedback-fab" class="feedback-fab" onclick="openFeedback()">💬 Feedback</button>
+
+<!-- Feedback Modal -->
+<div id="feedback-overlay" class="feedback-overlay" onclick="onFeedbackOverlayClick(event)">
+  <div class="feedback-sheet" style="position:relative;" onclick="event.stopPropagation()">
+    <button class="feedback-close-btn" onclick="closeFeedback()" title="Close">×</button>
+    <div id="feedback-body">
+      <div class="feedback-sheet-title">How's SettlingUp working for you?</div>
+      <div class="feedback-sheet-sub">Takes 2 seconds, helps a lot.</div>
+      <div class="feedback-thumbs">
+        <button class="feedback-thumb" id="thumb-up" onclick="selectThumb(2)" title="👍">👍</button>
+        <button class="feedback-thumb" id="thumb-down" onclick="selectThumb(1)" title="👎">👎</button>
+      </div>
+      <textarea id="feedback-comment" placeholder="Anything else? (optional)"></textarea>
+      <div class="feedback-sheet-actions">
+        <button class="btn btn-ghost" style="flex:0" onclick="closeFeedback()">Cancel</button>
+        <button class="btn btn-primary" id="feedback-send" style="flex:1" disabled onclick="submitFeedback()">Send</button>
+      </div>
+    </div>
+    <div id="feedback-thanks" class="feedback-thanks" style="display:none">Thanks! 🙏</div>
+  </div>
+</div>
+
 <!-- Identity picker -->
 <div id="identity-picker" class="db-overlay hidden">
   <div style="text-align:center;max-width:360px;width:100%;padding:0 20px;">
@@ -830,6 +906,7 @@ async function goStep(n) {
     if(i < n) el.classList.add('done');
     if(i === n) el.classList.add('active');
   });
+  updateFeedbackFab();
   window.scrollTo({top:0, behavior:'smooth'});
 }
 
@@ -2639,6 +2716,66 @@ window.addEventListener('load', async () => {
 
   await loadFromHashUrl();
 });
+
+// ─── FEEDBACK ────────────────────────────────────────────
+let _feedbackRating = null;
+
+function updateFeedbackFab() {
+  const fab = document.getElementById('feedback-fab');
+  if(!fab) return;
+  const onStep2 = document.getElementById('step-2').classList.contains('active');
+  const onStep3 = document.getElementById('step-3').classList.contains('active');
+  if(onStep2 || onStep3) {
+    fab.classList.add('visible');
+  } else {
+    fab.classList.remove('visible');
+  }
+}
+
+function openFeedback() {
+  _feedbackRating = null;
+  document.getElementById('thumb-up').classList.remove('selected');
+  document.getElementById('thumb-down').classList.remove('selected');
+  document.getElementById('feedback-comment').value = '';
+  document.getElementById('feedback-send').disabled = true;
+  document.getElementById('feedback-body').style.display = '';
+  document.getElementById('feedback-thanks').style.display = 'none';
+  document.getElementById('feedback-overlay').classList.add('open');
+}
+
+function closeFeedback() {
+  document.getElementById('feedback-overlay').classList.remove('open');
+}
+
+function onFeedbackOverlayClick(e) {
+  if(e.target === document.getElementById('feedback-overlay')) closeFeedback();
+}
+
+function selectThumb(rating) {
+  _feedbackRating = rating;
+  document.getElementById('thumb-up').classList.toggle('selected', rating === 2);
+  document.getElementById('thumb-down').classList.toggle('selected', rating === 1);
+  document.getElementById('feedback-send').disabled = false;
+}
+
+async function submitFeedback() {
+  if(!_feedbackRating) return;
+  const comment = (document.getElementById('feedback-comment').value || '').trim() || null;
+  const tabId = state.tabId || null;
+
+  document.getElementById('feedback-body').style.display = 'none';
+  document.getElementById('feedback-thanks').style.display = '';
+
+  try {
+    if(db) {
+      await db.from('feedback').insert({ tab_id: tabId, rating: _feedbackRating, comment });
+    }
+  } catch(err) {
+    console.warn('Feedback insert failed:', err);
+  }
+
+  setTimeout(() => closeFeedback(), 1500);
+}
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
