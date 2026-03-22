@@ -630,12 +630,14 @@ select option { background:var(--bg2);color:var(--text); }
         <input id="new-person-input" type="text" placeholder="Add a name…" maxlength="30" autocomplete="off" onkeydown="if(event.key==='Enter') addPerson()">
         <button class="btn btn-secondary" onclick="addPerson()">+ Add</button>
       </div>
+      <div id="add-person-error" style="display:none;font-size:12px;color:var(--red);margin-top:6px;"></div>
     </div>
     <div class="btn-row">
       <button class="btn btn-ghost" onclick="goStep(0)">← Back</button>
       <button class="share-btn" id="share-btn-1" onclick="shareTab(this)" style="padding:10px 14px;flex-shrink:0;">🔗 Share</button>
       <button class="btn btn-primary" style="flex:1" onclick="goStep(2)">Add expenses →</button>
     </div>
+    <div id="step1-next-error" style="display:none;font-size:12px;color:var(--red);margin-top:4px;text-align:center;"></div>
   </div>
 
   <!-- STEP 2 -->
@@ -705,6 +707,7 @@ select option { background:var(--bg2);color:var(--text); }
       <button class="share-btn" id="share-btn-2" onclick="shareTab(this)" style="padding:10px 14px;flex-shrink:0;">🔗 Share</button>
       <button class="btn btn-primary" style="flex:1" onclick="goSettle()">Settle up →</button>
     </div>
+    <div id="go-settle-error" style="display:none;font-size:12px;color:var(--red);margin-top:4px;text-align:center;"></div>
   </div>
 
   <!-- STEP 3 -->
@@ -874,6 +877,15 @@ function computePersonShare(exp, personId) {
 let _tempIdSeq = -1;
 function nextTempId() { return _tempIdSeq--; }
 
+function showInlineError(id, msg, durationMs) {
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.textContent = msg;
+  el.style.display = '';
+  clearTimeout(el._errTimer);
+  el._errTimer = setTimeout(() => { el.style.display = 'none'; el.textContent = ''; }, durationMs || 3500);
+}
+
 // ─── NAV ─────────────────────────────────────────────────
 async function goStep(n) {
   if(n === 1) {
@@ -881,7 +893,7 @@ async function goStep(n) {
     renderPeopleList();
   }
   if(n === 2) {
-    if(state.people.length < 2) { alert('Add at least 2 people first.'); return; }
+    if(state.people.length < 2) { showInlineError('step1-next-error', 'Add at least 2 people first.'); return; }
     renderExpenseStep();
     if(db && !state.tabId) {
       try {
@@ -938,7 +950,7 @@ function addPerson() {
   const inp = document.getElementById('new-person-input');
   const name = inp.value.trim();
   if(!name) return;
-  if(state.people.find(p => p.name.toLowerCase() === name.toLowerCase())) { alert('That name is already in the list.'); return; }
+  if(state.people.find(p => p.name.toLowerCase() === name.toLowerCase())) { showInlineError('add-person-error', 'That name is already in the list.'); return; }
   state.people.push({id: personIdSeq++, name});
   inp.value = '';
   renderPeopleList();
@@ -1666,7 +1678,7 @@ function updateCardDetailPayments(pid, payments, mode) {
 }
 
 function goSettle() {
-  if(!state.expenses.length) { alert('Add at least one expense first.'); return; }
+  if(!state.expenses.length) { showInlineError('go-settle-error', 'Add at least one expense first.'); return; }
   if(state.shortCode && window.location.search) {
     history.replaceState(null, '', window.location.origin + '/t/' + state.shortCode);
   }
@@ -1759,13 +1771,20 @@ function renderSettleStep(balances) {
         : (itsMe ? `You owed ${fmt(Math.abs(rawBal))} and have paid it.` : `${escHtml(p.name)} owed ${fmt(Math.abs(rawBal))} and has paid it.`);
       sentence = direction;
     } else if(isPos) {
-      verdict = itsMe ? `you're owed ${fmt(adjBal)}` : `is owed ${fmt(adjBal)}`;
-      sentence = itsMe
-        ? `You paid ${fmt(paid)}, your share was ${fmt(owed)} — the group owes you ${fmt(adjBal)}.`
-        : `${escHtml(p.name)} paid ${fmt(paid)}, their share was ${fmt(owed)} — the group owes them ${fmt(adjBal)}.`;
-      if(adjBal < rawBal - 0.005) {
-        const paid_ = Math.round((rawBal - adjBal)*100)/100;
-        sentence += ` <em style="color:var(--green)">(${fmt(paid_)} already paid)</em>`;
+      if(isMicro) {
+        verdict = `basically settled`;
+        sentence = itsMe
+          ? `The group is <span style="color:var(--text3)">${fmt(adjBal)} off</span> — close enough to call it even.`
+          : `${escHtml(p.name)} is owed <span style="color:var(--text3)">${fmt(adjBal)}</span> — close enough to call it even.`;
+      } else {
+        verdict = itsMe ? `you're owed ${fmt(adjBal)}` : `is owed ${fmt(adjBal)}`;
+        sentence = itsMe
+          ? `You paid ${fmt(paid)}, your share was ${fmt(owed)} — the group owes you ${fmt(adjBal)}.`
+          : `${escHtml(p.name)} paid ${fmt(paid)}, their share was ${fmt(owed)} — the group owes them ${fmt(adjBal)}.`;
+        if(adjBal < rawBal - 0.005) {
+          const paid_ = Math.round((rawBal - adjBal)*100)/100;
+          sentence += ` <em style="color:var(--green)">(${fmt(paid_)} already paid)</em>`;
+        }
       }
     } else if(isNeg) {
       if(isMicro) {
@@ -1783,11 +1802,6 @@ function renderSettleStep(balances) {
           sentence += ` <em style="color:var(--green)">(${fmt(alreadyPaid)} already paid)</em>`;
         }
       }
-    } else if(isPos && isMicro) {
-      verdict = `basically settled`;
-      sentence = itsMe
-        ? `The group is <span style="color:var(--text3)">${fmt(adjBal)} off</span> — close enough to call it even.`
-        : `${escHtml(p.name)} is owed <span style="color:var(--text3)">${fmt(adjBal)}</span> — close enough to call it even.`;
     } else {
       verdict = 'settled ✓';
       sentence = itsMe ? `You paid exactly your share. All settled.` : `${escHtml(p.name)} paid exactly their share. All settled.`;
@@ -1807,13 +1821,13 @@ function renderSettleStep(balances) {
       <div class="person-card-header" onclick="toggleCard(${p.id})">
         <div class="person-avatar ${avatarClass(i)}" style="width:32px;height:32px;font-size:13px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;">${initials(p.name)}</div>
         <div class="person-card-name">${itsMe?'You':escHtml(p.name)}${itsMe?'<span class="you-badge">You</span>':''}</div>
-        <div class="person-card-verdict ${isFullySettledByPayments?'zero':vc}">${verdict}</div>
+        <div class="person-card-verdict ${isFullySettledByPayments||isMicro?'zero':vc}">${verdict}</div>
         <span class="expand-chevron">▼</span>
       </div>
       <div class="person-card-body">
         <div class="person-card-stat"><div class="stat-val" style="color:var(--accent)">${fmt(paid)}</div><div class="stat-lbl">Paid</div></div>
         <div class="person-card-stat"><div class="stat-val" style="color:var(--text2)">${fmt(owed)}</div><div class="stat-lbl">Share</div></div>
-        <div class="person-card-stat"><div class="stat-val ${isFullySettledByPayments?'zero':vc}">${isPos?'+':isNeg?'-':''}${Math.abs(adjBal)<0.005?'$0':fmt(Math.abs(adjBal))}</div><div class="stat-lbl">Net</div></div>
+        <div class="person-card-stat"><div class="stat-val ${isFullySettledByPayments||isMicro?'zero':vc}">${isPos?'+':isNeg?'-':''}${Math.abs(adjBal)<0.005?'$0':fmt(Math.abs(adjBal))}</div><div class="stat-lbl">Net</div></div>
       </div>
       <div class="person-card-sentence">${sentence}</div>
       <div class="person-card-detail">
